@@ -141,6 +141,8 @@ Multipart form-data dengan field `file`.
 
 ## Proxmox / LXC
 
+Panduan rollout langkah demi langkah ada di `deploy/PLAYBOOK-PROXMOX-LXC.md`.
+
 ### Build image
 
 ```bash
@@ -164,6 +166,10 @@ docker run -d \
 ### Menjalankan via systemd
 
 Contoh unit file ada di `deploy/systemd/netking-ipam.service`.
+Backup harian otomatis tersedia lewat:
+
+- `deploy/systemd/netking-ipam-backup.service`
+- `deploy/systemd/netking-ipam-backup.timer`
 
 ## Reverse Proxy
 
@@ -183,6 +189,8 @@ Atau gunakan script helper:
 chmod +x deploy/scripts/backup-sqlite.sh
 ./deploy/scripts/backup-sqlite.sh /opt/netking-ipam/data/netking.db /opt/netking-ipam/data/backups
 ```
+
+Contoh env produksi awal tersedia di `.env.production.example`.
 
 ## Yang Masih Perlu Sebelum Production
 

@@ -1,0 +1,9 @@
+[Unit]
+Description=Netking IPAM SQLite Backup
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/netking-ipam
+ExecStart=/opt/netking-ipam/deploy/scripts/backup-sqlite.sh /opt/netking-ipam/data/netking.db /opt/netking-ipam/data/backups
+
