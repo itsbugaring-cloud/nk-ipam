@@ -1,0 +1,21 @@
+version: "3.9"
+
+services:
+  netking-ipam:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: netking-ipam
+    ports:
+      - "8080:8080"
+    environment:
+      APP_HOST: 0.0.0.0
+      APP_PORT: 8080
+      DATABASE_URL: sqlite://data/netking.db
+      MIKROTIK_USERNAME: admin
+      MIKROTIK_PASSWORD: change-me
+      MIKROTIK_ALLOW_INSECURE_TLS: "true"
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+

@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Netking IPAM & Inventory Explorer</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
+  <style>
+    :root {
+      --nk-ink: #13222d;
+      --nk-paper: #f6f2e8;
+      --nk-sand: #dcc9a3;
+      --nk-accent: #177e89;
+      --nk-alert: #b2452e;
+      --nk-olive: #516f46;
+    }
+
+    body {
+      background:
+        radial-gradient(circle at top left, rgba(220, 201, 163, 0.55), transparent 32%),
+        linear-gradient(135deg, #f1ecdf 0%, #fbfaf5 45%, #e7efe7 100%);
+      color: var(--nk-ink);
+      font-family: Georgia, "Times New Roman", serif;
+    }
+  </style>
+</head>
+<body class="min-h-screen">
+  <div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+    <header class="mb-8 rounded-[28px] border border-stone-300/70 bg-white/80 p-6 shadow-xl shadow-stone-300/30 backdrop-blur">
+      <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <p class="text-sm uppercase tracking-[0.35em] text-stone-500">Netking Ops Console</p>
+          <h1 class="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">IPAM & Network Inventory Explorer</h1>
+          <p class="mt-3 max-w-3xl text-sm text-stone-600 sm:text-base">
+            Sinkronisasi data OLT dari bookmark browser, tarik pool MikroTik lewat IP WireGuard, lalu petakan relasinya secara otomatis tanpa network scanning.
+          </p>
+        </div>
+        <div class="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-600">
+          <div>Status API: <span id="apiStatus" class="font-semibold text-[var(--nk-olive)]">Checking...</span></div>
+          <div class="mt-1">Mode: Direct RouterOS REST API via WireGuard</div>
+        </div>
+      </div>
+    </header>
+
+    <section class="grid gap-6 lg:grid-cols-2">
+      <div class="rounded-[24px] border border-stone-300/70 bg-white/85 p-6 shadow-lg shadow-stone-300/20">
+        <h2 class="text-xl font-semibold">Panel Unggah Bookmark</h2>
+        <p class="mt-2 text-sm text-stone-600">Unggah file <code>bookmarks.html</code> untuk mengisi data master OLT dari hasil export browser.</p>
+        <form id="bookmarkForm" class="mt-5 space-y-4">
+          <input id="bookmarkFile" name="file" type="file" accept=".html,text/html" class="block w-full rounded-xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm" />
+          <button type="submit" class="rounded-xl bg-[var(--nk-accent)] px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-cyan-900/20 transition hover:opacity-90">
+            Sinkronkan Bookmark OLT
+          </button>
+        </form>
+      </div>
+
+      <div class="rounded-[24px] border border-stone-300/70 bg-white/85 p-6 shadow-lg shadow-stone-300/20">
+        <h2 class="text-xl font-semibold">Panel Pindai Perangkat</h2>
+        <p class="mt-2 text-sm text-stone-600">Masukkan IP remote WireGuard router MikroTik. Backend akan langsung memanggil API RouterOS v7.</p>
+        <form id="scanForm" class="mt-5 grid gap-4">
+          <input id="deviceName" type="text" placeholder="Nama perangkat opsional, contoh: MK-Branch-JKT" class="rounded-xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm" />
+          <input id="wireguardIp" type="text" placeholder="Contoh: 10.10.50.1" class="rounded-xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm" required />
+          <button id="scanButton" type="submit" class="rounded-xl bg-[var(--nk-ink)] px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-slate-900/20 transition hover:opacity-90">
+            Tarik Data Router
+          </button>
+        </form>
+      </div>
+    </section>
+
+    <section class="mt-8 rounded-[28px] border border-stone-300/70 bg-white/85 p-6 shadow-xl shadow-stone-300/20">
+      <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <h2 class="text-xl font-semibold">Data Explorer</h2>
+          <p class="mt-2 text-sm text-stone-600">Live search akan mempengaruhi isi tabel sekaligus file Excel/PDF yang diekspor.</p>
+        </div>
+        <div class="flex flex-col gap-3 sm:flex-row">
+          <input id="searchInput" type="search" placeholder="Cari nama perangkat, IP WG, OLT, atau status..." class="w-full rounded-xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm sm:w-80" />
+          <button id="exportExcel" class="rounded-xl border border-[var(--nk-olive)] px-4 py-3 text-sm font-semibold text-[var(--nk-olive)] transition hover:bg-[var(--nk-olive)] hover:text-white">
+            Export to Excel
+          </button>
+          <button id="exportPdf" class="rounded-xl border border-[var(--nk-alert)] px-4 py-3 text-sm font-semibold text-[var(--nk-alert)] transition hover:bg-[var(--nk-alert)] hover:text-white">
+            Export to PDF
+          </button>
+        </div>
+      </div>
+
+      <div id="flashMessage" class="mt-4 hidden rounded-2xl px-4 py-3 text-sm"></div>
+
+      <div class="mt-6 overflow-hidden rounded-2xl border border-stone-200">
+        <div class="overflow-x-auto">
+          <table class="min-w-full divide-y divide-stone-200">
+            <thead class="bg-stone-100">
+              <tr class="text-left text-xs uppercase tracking-[0.25em] text-stone-500">
+                <th class="px-4 py-4">Nama Perangkat</th>
+                <th class="px-4 py-4">IP WireGuard</th>
+                <th class="px-4 py-4">OLT Mapping</th>
+                <th class="px-4 py-4">IP Pool Pelanggan</th>
+                <th class="px-4 py-4">Status Koneksi</th>
+              </tr>
+            </thead>
+            <tbody id="tableBody" class="divide-y divide-stone-200 bg-white"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const state = {
+      rows: [],
+      filteredRows: []
+    };
+
+    const elements = {
+      apiStatus: document.getElementById('apiStatus'),
+      flashMessage: document.getElementById('flashMessage'),
+      bookmarkForm: document.getElementById('bookmarkForm'),
+      bookmarkFile: document.getElementById('bookmarkFile'),
+      scanForm: document.getElementById('scanForm'),
+      scanButton: document.getElementById('scanButton'),
+      deviceName: document.getElementById('deviceName'),
+      wireguardIp: document.getElementById('wireguardIp'),
+      searchInput: document.getElementById('searchInput'),
+      tableBody: document.getElementById('tableBody'),
+      exportExcel: document.getElementById('exportExcel'),
+      exportPdf: document.getElementById('exportPdf')
+    };
+
+    function setFlash(message, type = 'info') {
+      const palette = {
+        info: 'bg-cyan-50 text-cyan-900 border border-cyan-200',
+        success: 'bg-emerald-50 text-emerald-900 border border-emerald-200',
+        error: 'bg-rose-50 text-rose-900 border border-rose-200'
+      };
+
+      elements.flashMessage.className = `mt-4 rounded-2xl px-4 py-3 text-sm ${palette[type] || palette.info}`;
+      elements.flashMessage.textContent = message;
+      elements.flashMessage.classList.remove('hidden');
+    }
+
+    function hideFlash() {
+      elements.flashMessage.classList.add('hidden');
+    }
+
+    function normalizeRows(rows) {
+      return rows.map((row) => ({
+        ...row,
+        ip_pools: Array.isArray(row.ip_pools) ? row.ip_pools : []
+      }));
+    }
+
+    function renderTable(rows) {
+      if (!rows.length) {
+        elements.tableBody.innerHTML = `
+          <tr>
+            <td colspan="5" class="px-4 py-10 text-center text-sm text-stone-500">
+              Belum ada data. Unggah bookmark OLT lalu lakukan scan ke router MikroTik.
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      elements.tableBody.innerHTML = rows.map((row) => `
+        <tr class="align-top">
+          <td class="px-4 py-4">
+            <div class="font-semibold">${escapeHtml(row.device_name)}</div>
+            <div class="mt-1 text-xs text-stone-500">${escapeHtml(row.last_scanned_at || '-')}</div>
+          </td>
+          <td class="px-4 py-4 font-mono text-sm">${escapeHtml(row.wireguard_ip)}</td>
+          <td class="px-4 py-4 text-sm">
+            <div>${escapeHtml(row.olt_name || '-')}</div>
+            <div class="mt-1 font-mono text-xs text-stone-500">${escapeHtml(row.olt_ip || '-')}</div>
+          </td>
+          <td class="px-4 py-4 text-sm">
+            ${row.ip_pools.length ? row.ip_pools.map((item) => `<div class="mb-2 rounded-xl bg-stone-100 px-3 py-2 font-mono text-xs">${escapeHtml(item)}</div>`).join('') : '<span class="text-stone-400">-</span>'}
+          </td>
+          <td class="px-4 py-4 text-sm">
+            <span class="inline-flex rounded-full px-3 py-1 text-xs font-semibold ${row.connection_status === 'connected' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}">
+              ${escapeHtml(row.connection_status)}
+            </span>
+            ${row.last_error ? `<div class="mt-2 text-xs text-rose-600">${escapeHtml(row.last_error)}</div>` : ''}
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    function applyFilter() {
+      const keyword = elements.searchInput.value.trim().toLowerCase();
+      state.filteredRows = state.rows.filter((row) => {
+        const haystack = [
+          row.device_name,
+          row.wireguard_ip,
+          row.olt_name || '',
+          row.olt_ip || '',
+          row.connection_status,
+          ...(row.ip_pools || [])
+        ].join(' ').toLowerCase();
+        return haystack.includes(keyword);
+      });
+
+      renderTable(state.filteredRows);
+    }
+
+    async function loadExplorer() {
+      const response = await fetch('/api/explorer');
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Gagal mengambil data explorer');
+      }
+      state.rows = normalizeRows(data);
+      applyFilter();
+    }
+
+    async function checkHealth() {
+      try {
+        const response = await fetch('/api/health');
+        const data = await response.json();
+        elements.apiStatus.textContent = data.status === 'ok' ? 'Online' : 'Degraded';
+      } catch (error) {
+        elements.apiStatus.textContent = 'Offline';
+      }
+    }
+
+    async function handleBookmarkUpload(event) {
+      event.preventDefault();
+      hideFlash();
+
+      const file = elements.bookmarkFile.files[0];
+      if (!file) {
+        setFlash('Pilih file bookmarks.html terlebih dahulu.', 'error');
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append('file', file);
+
+      try {
+        setFlash('Mengunggah dan memproses bookmark OLT...', 'info');
+        const response = await fetch('/api/bookmarks/import', {
+          method: 'POST',
+          body: formData
+        });
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error || 'Import bookmark gagal');
+        }
+        setFlash(`Sinkronisasi selesai. ${data.imported} record OLT diproses.`, 'success');
+        await loadExplorer();
+      } catch (error) {
+        setFlash(error.message, 'error');
+      }
+    }
+
+    async function handleScan(event) {
+      event.preventDefault();
+      hideFlash();
+
+      const wireguardIp = elements.wireguardIp.value.trim();
+      if (!wireguardIp) {
+        setFlash('IP WireGuard wajib diisi.', 'error');
+        return;
+      }
+
+      try {
+        elements.scanButton.disabled = true;
+        elements.scanButton.textContent = 'Memproses...';
+        setFlash(`Menarik data RouterOS dari ${wireguardIp}...`, 'info');
+
+        const response = await fetch('/api/routers/scan', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            wireguard_ip: wireguardIp,
+            device_name: elements.deviceName.value.trim() || null
+          })
+        });
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error || 'Scan router gagal');
+        }
+
+        const mappingInfo = data.matched_by ? ` Mapping ditemukan via ${data.matched_by}.` : ' Mapping OLT belum ditemukan.';
+        setFlash(`Router ${data.router.device_name} berhasil disinkronkan.${mappingInfo}`, 'success');
+        elements.scanForm.reset();
+        await loadExplorer();
+      } catch (error) {
+        setFlash(error.message, 'error');
+      } finally {
+        elements.scanButton.disabled = false;
+        elements.scanButton.textContent = 'Tarik Data Router';
+      }
+    }
+
+    function exportToExcel() {
+      const worksheet = XLSX.utils.json_to_sheet(state.filteredRows.map(mapExportRow));
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Explorer');
+      XLSX.writeFile(workbook, 'netking-ipam-explorer.xlsx');
+    }
+
+    function exportToPdf() {
+      const { jsPDF } = window.jspdf;
+      const pdf = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
+
+      pdf.setFontSize(16);
+      pdf.text('Netking IPAM & Network Inventory Explorer', 40, 40);
+      pdf.setFontSize(10);
+      pdf.text(`Generated at ${new Date().toLocaleString()}`, 40, 58);
+
+      pdf.autoTable({
+        startY: 80,
+        head: [['Nama Perangkat', 'IP WireGuard', 'OLT Mapping', 'IP Pool Pelanggan', 'Status']],
+        body: state.filteredRows.map((row) => [
+          row.device_name,
+          row.wireguard_ip,
+          [row.olt_name || '-', row.olt_ip || '-'].join(' / '),
+          row.ip_pools.join('\n') || '-',
+          row.connection_status
+        ]),
+        styles: {
+          fontSize: 8,
+          cellPadding: 6
+        },
+        headStyles: {
+          fillColor: [19, 34, 45]
+        }
+      });
+
+      pdf.save('netking-ipam-explorer.pdf');
+    }
+
+    function mapExportRow(row) {
+      return {
+        'Nama Perangkat': row.device_name,
+        'IP WireGuard': row.wireguard_ip,
+        'Nama OLT': row.olt_name || '-',
+        'IP OLT': row.olt_ip || '-',
+        'IP Pool Pelanggan': row.ip_pools.join(' | ') || '-',
+        'Status Koneksi': row.connection_status,
+        'Last Scanned': row.last_scanned_at || '-'
+      };
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+    }
+
+    elements.bookmarkForm.addEventListener('submit', handleBookmarkUpload);
+    elements.scanForm.addEventListener('submit', handleScan);
+    elements.searchInput.addEventListener('input', applyFilter);
+    elements.exportExcel.addEventListener('click', exportToExcel);
+    elements.exportPdf.addEventListener('click', exportToPdf);
+
+    checkHealth();
+    loadExplorer().catch((error) => setFlash(error.message, 'error'));
+  </script>
+</body>
+</html>
+
