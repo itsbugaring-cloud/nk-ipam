@@ -6,6 +6,10 @@ use crate::app_error::{AppError, AppResult};
 pub struct AppConfig {
     pub bind_addr: SocketAddr,
     pub database_url: String,
+    pub auth_enabled: bool,
+    pub admin_username: Option<String>,
+    pub admin_password: Option<String>,
+    pub session_token: Option<String>,
     pub mikrotik_username: Option<String>,
     pub mikrotik_password: Option<String>,
     pub allow_insecure_tls: bool,
@@ -25,10 +29,20 @@ impl AppConfig {
             .parse::<SocketAddr>()
             .map_err(|err| AppError::BadRequest(format!("APP_HOST/APP_PORT invalid: {err}")))?;
 
+        let admin_username = env::var("APP_ADMIN_USERNAME").ok();
+        let admin_password = env::var("APP_ADMIN_PASSWORD").ok();
+        let session_token = env::var("APP_SESSION_TOKEN").ok();
+        let auth_enabled =
+            admin_username.is_some() && admin_password.is_some() && session_token.is_some();
+
         Ok(Self {
             bind_addr,
             database_url: env::var("DATABASE_URL")
                 .unwrap_or_else(|_| "sqlite://data/netking.db".to_string()),
+            auth_enabled,
+            admin_username,
+            admin_password,
+            session_token,
             mikrotik_username: env::var("MIKROTIK_USERNAME").ok(),
             mikrotik_password: env::var("MIKROTIK_PASSWORD").ok(),
             allow_insecure_tls: env::var("MIKROTIK_ALLOW_INSECURE_TLS")

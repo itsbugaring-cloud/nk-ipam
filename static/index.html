@@ -28,6 +28,20 @@
   </style>
 </head>
 <body class="min-h-screen">
+  <div id="loginOverlay" class="fixed inset-0 z-50 hidden items-center justify-center bg-stone-950/45 p-4 backdrop-blur-sm">
+    <div class="w-full max-w-md rounded-[28px] border border-stone-300/70 bg-white p-6 shadow-2xl">
+      <p class="text-xs uppercase tracking-[0.35em] text-stone-500">Secure Access</p>
+      <h2 class="mt-2 text-2xl font-bold">Login Dashboard</h2>
+      <p class="mt-2 text-sm text-stone-600">Masukkan akun admin staging untuk membuka akses dashboard.</p>
+      <form id="loginForm" class="mt-5 grid gap-4">
+        <input id="loginUsername" type="text" placeholder="Admin username" class="rounded-xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm" />
+        <input id="loginPassword" type="password" placeholder="Admin password" class="rounded-xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm" />
+        <button id="loginButton" type="submit" class="rounded-xl bg-[var(--nk-ink)] px-5 py-3 text-sm font-semibold text-white">
+          Login
+        </button>
+      </form>
+    </div>
+  </div>
   <div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
     <header class="mb-8 rounded-[28px] border border-stone-300/70 bg-white/80 p-6 shadow-xl shadow-stone-300/30 backdrop-blur">
       <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
@@ -41,6 +55,7 @@
         <div class="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-600">
           <div>Status API: <span id="apiStatus" class="font-semibold text-[var(--nk-olive)]">Checking...</span></div>
           <div class="mt-1">Mode: Direct RouterOS REST API via WireGuard</div>
+          <div id="authBadge" class="mt-1 text-xs text-stone-500">Auth: pending</div>
         </div>
       </div>
     </header>
@@ -126,17 +141,37 @@
         </div>
       </div>
     </section>
+
+    <section class="mt-8 rounded-[28px] border border-stone-300/70 bg-white/85 p-6 shadow-xl shadow-stone-300/20">
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 class="text-xl font-semibold">Audit Activity</h2>
+          <p class="mt-2 text-sm text-stone-600">100 aktivitas terbaru dari dashboard dan API.</p>
+        </div>
+      </div>
+      <div id="auditLogList" class="mt-6 grid gap-3"></div>
+    </section>
   </div>
 
   <script>
     const state = {
       rows: [],
       filteredRows: [],
-      olts: []
+      olts: [],
+      authEnabled: false,
+      token: localStorage.getItem('netking_ipam_token') || '',
+      username: localStorage.getItem('netking_ipam_user') || '',
+      bootstrapped: false
     };
 
     const elements = {
+      loginOverlay: document.getElementById('loginOverlay'),
+      loginForm: document.getElementById('loginForm'),
+      loginUsername: document.getElementById('loginUsername'),
+      loginPassword: document.getElementById('loginPassword'),
+      loginButton: document.getElementById('loginButton'),
       apiStatus: document.getElementById('apiStatus'),
+      authBadge: document.getElementById('authBadge'),
       flashMessage: document.getElementById('flashMessage'),
       bookmarkForm: document.getElementById('bookmarkForm'),
       bookmarkFile: document.getElementById('bookmarkFile'),
@@ -153,8 +188,26 @@
       tableBody: document.getElementById('tableBody'),
       exportCsv: document.getElementById('exportCsv'),
       exportExcel: document.getElementById('exportExcel'),
-      exportPdf: document.getElementById('exportPdf')
+      exportPdf: document.getElementById('exportPdf'),
+      auditLogList: document.getElementById('auditLogList')
     };
+
+    async function authFetch(url, options = {}) {
+      const headers = new Headers(options.headers || {});
+      if (state.token) {
+        headers.set('Authorization', `Bearer ${state.token}`);
+      }
+
+      const response = await fetch(url, { ...options, headers });
+      if (response.status === 401) {
+        state.token = '';
+        state.username = '';
+        localStorage.removeItem('netking_ipam_token');
+        localStorage.removeItem('netking_ipam_user');
+        showLogin();
+      }
+      return response;
+    }
 
     function setFlash(message, type = 'info') {
       const palette = {
@@ -172,11 +225,53 @@
       elements.flashMessage.classList.add('hidden');
     }
 
+    function showLogin() {
+      elements.loginOverlay.classList.remove('hidden');
+      elements.loginOverlay.classList.add('flex');
+      elements.authBadge.textContent = state.authEnabled
+        ? `Auth: locked${state.username ? ` as ${state.username}` : ''}`
+        : 'Auth: disabled';
+    }
+
+    function hideLogin() {
+      elements.loginOverlay.classList.add('hidden');
+      elements.loginOverlay.classList.remove('flex');
+      elements.authBadge.textContent = state.authEnabled
+        ? `Auth: active as ${state.username || 'admin'}`
+        : 'Auth: disabled';
+    }
+
     function normalizeRows(rows) {
       return rows.map((row) => ({
         ...row,
         ip_pools: Array.isArray(row.ip_pools) ? row.ip_pools : []
       }));
+    }
+
+    function renderAuditLogs(rows) {
+      if (!rows.length) {
+        elements.auditLogList.innerHTML = `
+          <div class="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-5 text-sm text-stone-500">
+            Belum ada aktivitas yang tercatat.
+          </div>
+        `;
+        return;
+      }
+
+      elements.auditLogList.innerHTML = rows.map((row) => `
+        <div class="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4">
+          <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div>
+              <div class="text-sm font-semibold text-stone-800">${escapeHtml(row.action)}</div>
+              <div class="mt-1 text-xs uppercase tracking-[0.18em] text-stone-500">
+                ${escapeHtml(row.actor)} • ${escapeHtml(row.target_type)}${row.target_id ? ` #${escapeHtml(row.target_id)}` : ''}
+              </div>
+            </div>
+            <div class="text-xs text-stone-500">${escapeHtml(row.created_at)}</div>
+          </div>
+          ${row.detail ? `<div class="mt-2 text-sm text-stone-600">${escapeHtml(row.detail)}</div>` : ''}
+        </div>
+      `).join('');
     }
 
     function renderTable(rows) {
@@ -261,7 +356,7 @@
     }
 
     async function loadExplorer() {
-      const response = await fetch('/api/explorer');
+      const response = await authFetch('/api/explorer');
       const data = await response.json();
       if (!response.ok) {
         throw new Error(data.error || 'Gagal mengambil data explorer');
@@ -271,7 +366,7 @@
     }
 
     async function loadOlts() {
-      const response = await fetch('/api/olts');
+      const response = await authFetch('/api/olts');
       const data = await response.json();
       if (!response.ok) {
         throw new Error(data.error || 'Gagal mengambil daftar OLT');
@@ -279,15 +374,71 @@
       state.olts = Array.isArray(data) ? data : [];
     }
 
+    async function loadAuditLogs() {
+      const response = await authFetch('/api/audit-logs');
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Gagal mengambil audit logs');
+      }
+      renderAuditLogs(Array.isArray(data) ? data : []);
+    }
+
     async function checkHealth() {
       try {
         const response = await fetch('/api/health');
         const data = await response.json();
+        state.authEnabled = Boolean(data.auth_enabled);
         elements.apiStatus.textContent = data.status === 'ok'
           ? `Online (${data.default_credentials ? 'env auth ready' : 'per-router auth required'})`
           : 'Degraded';
+        if (state.authEnabled && !state.token) {
+          showLogin();
+        } else {
+          hideLogin();
+          if (!state.bootstrapped) {
+            state.bootstrapped = true;
+            await Promise.all([loadOlts(), loadExplorer(), loadAuditLogs()]);
+          }
+        }
       } catch (error) {
         elements.apiStatus.textContent = 'Offline';
+        elements.authBadge.textContent = 'Auth: unavailable';
+      }
+    }
+
+    async function handleLogin(event) {
+      event.preventDefault();
+      hideFlash();
+
+      try {
+        elements.loginButton.disabled = true;
+        elements.loginButton.textContent = 'Logging in...';
+        const response = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username: elements.loginUsername.value.trim(),
+            password: elements.loginPassword.value
+          })
+        });
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error || 'Login gagal');
+        }
+
+        state.token = data.token;
+        state.username = data.username;
+        localStorage.setItem('netking_ipam_token', data.token);
+        localStorage.setItem('netking_ipam_user', data.username);
+        hideLogin();
+        setFlash(`Login berhasil sebagai ${data.username}.`, 'success');
+        state.bootstrapped = true;
+        await Promise.all([loadOlts(), loadExplorer(), loadAuditLogs()]);
+      } catch (error) {
+        setFlash(error.message, 'error');
+      } finally {
+        elements.loginButton.disabled = false;
+        elements.loginButton.textContent = 'Login';
       }
     }
 
@@ -306,7 +457,7 @@
 
       try {
         setFlash('Mengunggah dan memproses bookmark OLT...', 'info');
-        const response = await fetch('/api/bookmarks/import', {
+        const response = await authFetch('/api/bookmarks/import', {
           method: 'POST',
           body: formData
         });
@@ -315,8 +466,7 @@
           throw new Error(data.error || 'Import bookmark gagal');
         }
         setFlash(`Sinkronisasi selesai. ${data.imported} record OLT diproses.`, 'success');
-        await loadOlts();
-        await loadExplorer();
+        await Promise.all([loadOlts(), loadExplorer(), loadAuditLogs()]);
       } catch (error) {
         setFlash(error.message, 'error');
       }
@@ -337,7 +487,7 @@
         elements.scanButton.textContent = 'Memproses...';
         setFlash(`Menarik data RouterOS dari ${wireguardIp}...`, 'info');
 
-        const response = await fetch('/api/routers/scan', {
+        const response = await authFetch('/api/routers/scan', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -355,7 +505,7 @@
         const mappingInfo = data.matched_by ? ` Mapping ditemukan via ${data.matched_by}.` : ' Mapping OLT belum ditemukan.';
         setFlash(`Router ${data.router.device_name} berhasil disinkronkan.${mappingInfo}`, 'success');
         elements.scanForm.reset();
-        await loadExplorer();
+        await Promise.all([loadExplorer(), loadAuditLogs()]);
       } catch (error) {
         setFlash(error.message, 'error');
       } finally {
@@ -393,7 +543,7 @@
         elements.bulkScanButton.textContent = 'Bulk scan berjalan...';
         setFlash(`Memproses ${routers.length} router dari daftar bulk scan...`, 'info');
 
-        const response = await fetch('/api/routers/bulk-scan', {
+        const response = await authFetch('/api/routers/bulk-scan', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ routers })
@@ -404,7 +554,7 @@
         }
 
         setFlash(`Bulk scan selesai. Success: ${data.success_count}, Failure: ${data.failure_count}.`, data.failure_count ? 'info' : 'success');
-        await loadExplorer();
+        await Promise.all([loadExplorer(), loadAuditLogs()]);
       } catch (error) {
         setFlash(error.message, 'error');
       } finally {
@@ -428,14 +578,14 @@
           button.textContent = 'Rescan...';
           setFlash(`Menjalankan rescan router #${routerId}...`, 'info');
 
-          const response = await fetch(`/api/routers/${routerId}/rescan`, { method: 'POST' });
+          const response = await authFetch(`/api/routers/${routerId}/rescan`, { method: 'POST' });
           const data = await response.json();
           if (!response.ok) {
             throw new Error(data.error || 'Rescan gagal');
           }
 
           setFlash(`Rescan berhasil untuk ${data.router.device_name}.`, 'success');
-          await loadExplorer();
+          await Promise.all([loadExplorer(), loadAuditLogs()]);
         } catch (error) {
           setFlash(error.message, 'error');
         } finally {
@@ -451,7 +601,7 @@
         try {
           button.disabled = true;
           button.textContent = 'Menyimpan...';
-          const response = await fetch(`/api/routers/${routerId}/map-olt`, {
+          const response = await authFetch(`/api/routers/${routerId}/map-olt`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ olt_id: oltId ? Number(oltId) : null })
@@ -462,7 +612,7 @@
           }
 
           setFlash(`Mapping OLT untuk ${data.device_name} berhasil diperbarui.`, 'success');
-          await loadExplorer();
+          await Promise.all([loadExplorer(), loadAuditLogs()]);
         } catch (error) {
           setFlash(error.message, 'error');
         } finally {
@@ -475,7 +625,21 @@
     function exportToCsv() {
       const keyword = encodeURIComponent(elements.searchInput.value.trim());
       const url = keyword ? `/api/routers/export.csv?q=${keyword}` : '/api/routers/export.csv';
-      window.open(url, '_blank');
+      authFetch(url)
+        .then(async (response) => {
+          if (!response.ok) {
+            const data = await response.json().catch(() => ({}));
+            throw new Error(data.error || 'Export CSV gagal');
+          }
+          const blob = await response.blob();
+          const href = URL.createObjectURL(blob);
+          const anchor = document.createElement('a');
+          anchor.href = href;
+          anchor.download = 'netking-ipam-explorer.csv';
+          anchor.click();
+          URL.revokeObjectURL(href);
+        })
+        .catch((error) => setFlash(error.message, 'error'));
     }
 
     function exportToExcel() {
@@ -539,6 +703,7 @@
         .replaceAll("'", '&#39;');
     }
 
+    elements.loginForm.addEventListener('submit', handleLogin);
     elements.bookmarkForm.addEventListener('submit', handleBookmarkUpload);
     elements.scanForm.addEventListener('submit', handleScan);
     elements.bulkScanForm.addEventListener('submit', handleBulkScan);
@@ -549,7 +714,6 @@
     elements.exportPdf.addEventListener('click', exportToPdf);
 
     checkHealth();
-    Promise.all([loadOlts(), loadExplorer()]).catch((error) => setFlash(error.message, 'error'));
   </script>
 </body>
 </html>

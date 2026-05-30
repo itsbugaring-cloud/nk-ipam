@@ -16,9 +16,10 @@ use crate::{
     config::AppConfig,
     mikrotik::MikrotikClient,
     models::{
-        now_rfc3339, BookmarkOlt, BulkScanItemResult, BulkScanRequest, BulkScanResponse, ExplorerRow,
-        HealthResponse, ImportBookmarksResponse, OltOption, RouterApiPool, RouterApiRoute, RouterRecord,
-        ScanRouterRequest, ScanRouterResponse, UpdateRouterMappingRequest,
+        now_rfc3339, AuditLog, BookmarkOlt, BulkScanItemResult, BulkScanRequest, BulkScanResponse,
+        ExplorerRow, HealthResponse, ImportBookmarksResponse, LoginRequest, LoginResponse, OltOption,
+        RouterApiPool, RouterApiRoute, RouterRecord, ScanRouterRequest, ScanRouterResponse,
+        UpdateRouterMappingRequest,
     },
     net::{parse_scope, ranges_to_scopes},
     parser::parse_bookmarks_html,
@@ -39,6 +40,7 @@ struct ExplorerQuery {
 pub fn build_router(state: AppState) -> Router {
     Router::new()
         .route("/api/health", get(health))
+        .route("/api/auth/login", post(login))
         .route("/api/bookmarks/import", post(import_bookmarks))
         .route("/api/routers/scan", post(scan_router))
         .route("/api/routers/bulk-scan", post(bulk_scan_routers))
@@ -47,6 +49,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/routers/export.csv", get(export_explorer_csv))
         .route("/api/olts", get(list_olts))
         .route("/api/explorer", get(list_explorer))
+        .route("/api/audit-logs", get(list_audit_logs))
         .with_state(state)
 }
 
@@ -66,13 +69,42 @@ async fn health(State(state): State<AppState>) -> AppResult<Json<HealthResponse>
         database: database.to_string(),
         default_credentials: state.config.mikrotik_username.is_some()
             && state.config.mikrotik_password.is_some(),
+        auth_enabled: state.config.auth_enabled,
+    }))
+}
+
+async fn login(
+    State(state): State<AppState>,
+    Json(payload): Json<LoginRequest>,
+) -> AppResult<Json<LoginResponse>> {
+    if !state.config.auth_enabled {
+        return Err(AppError::BadRequest(
+            "authentication is not enabled in environment".to_string(),
+        ));
+    }
+
+    let expected_username = state.config.admin_username.as_deref().unwrap_or_default();
+    let expected_password = state.config.admin_password.as_deref().unwrap_or_default();
+
+    if payload.username != expected_username || payload.password != expected_password {
+        return Err(AppError::Unauthorized);
+    }
+
+    let token = state.config.session_token.clone().unwrap_or_default();
+    append_audit_log(&state.pool, &payload.username, "login", "session", None, Some("success")).await?;
+
+    Ok(Json(LoginResponse {
+        token,
+        username: payload.username,
     }))
 }
 
 async fn import_bookmarks(
     State(state): State<AppState>,
+    headers: HeaderMap,
     mut multipart: Multipart,
 ) -> AppResult<Json<ImportBookmarksResponse>> {
+    let actor = require_auth(&state, &headers)?;
     let mut imported = 0usize;
 
     while let Some(field) = multipart.next_field().await? {
@@ -85,21 +117,38 @@ async fn import_bookmarks(
         imported += upsert_olts(&state.pool, &records).await?;
     }
 
+    let detail = format!("imported={imported}");
+    append_audit_log(&state.pool, &actor, "import_bookmarks", "olt", None, Some(&detail)).await?;
+
     Ok(Json(ImportBookmarksResponse { imported }))
 }
 
 async fn scan_router(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(payload): Json<ScanRouterRequest>,
 ) -> AppResult<Json<ScanRouterResponse>> {
+    let actor = require_auth(&state, &headers)?;
     let result = scan_router_payload(&state, payload).await?;
+    append_audit_log(
+        &state.pool,
+        &actor,
+        "scan_router",
+        "router",
+        Some(result.router.router_id.to_string()),
+        Some(&result.router.wireguard_ip),
+    )
+    .await?;
     Ok(Json(result))
 }
 
 async fn bulk_scan_routers(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(payload): Json<BulkScanRequest>,
 ) -> AppResult<Json<BulkScanResponse>> {
+    let actor = require_auth(&state, &headers)?;
+
     if payload.routers.is_empty() {
         return Err(AppError::BadRequest(
             "routers collection must contain at least one item".to_string(),
@@ -136,6 +185,9 @@ async fn bulk_scan_routers(
     let success_count = results.iter().filter(|item| item.success).count();
     let failure_count = results.len().saturating_sub(success_count);
 
+    let detail = format!("success={success_count};failure={failure_count}");
+    append_audit_log(&state.pool, &actor, "bulk_scan", "router", None, Some(&detail)).await?;
+
     Ok(Json(BulkScanResponse {
         success_count,
         failure_count,
@@ -145,16 +197,20 @@ async fn bulk_scan_routers(
 
 async fn list_explorer(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Query(query): Query<ExplorerQuery>,
 ) -> AppResult<Json<Vec<ExplorerRow>>> {
+    let _actor = require_auth(&state, &headers)?;
     let items = fetch_explorer_rows(&state.pool, query.q.as_deref()).await?;
     Ok(Json(items))
 }
 
 async fn export_explorer_csv(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Query(query): Query<ExplorerQuery>,
 ) -> AppResult<impl IntoResponse> {
+    let actor = require_auth(&state, &headers)?;
     let rows = fetch_explorer_rows(&state.pool, query.q.as_deref()).await?;
 
     let mut csv = String::from(
@@ -180,6 +236,8 @@ async fn export_explorer_csv(
         csv.push('\n');
     }
 
+    append_audit_log(&state.pool, &actor, "export_csv", "router", None, query.q.as_deref()).await?;
+
     let mut headers = HeaderMap::new();
     headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("text/csv; charset=utf-8"));
     headers.insert(
@@ -190,7 +248,11 @@ async fn export_explorer_csv(
     Ok((StatusCode::OK, headers, csv))
 }
 
-async fn list_olts(State(state): State<AppState>) -> AppResult<Json<Vec<OltOption>>> {
+async fn list_olts(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> AppResult<Json<Vec<OltOption>>> {
+    let _actor = require_auth(&state, &headers)?;
     let olts = sqlx::query_as::<_, crate::models::Olt>("SELECT * FROM olts ORDER BY name ASC")
         .fetch_all(&state.pool)
         .await?;
@@ -208,9 +270,11 @@ async fn list_olts(State(state): State<AppState>) -> AppResult<Json<Vec<OltOptio
 
 async fn update_router_mapping(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Path(router_id): Path<i64>,
     Json(payload): Json<UpdateRouterMappingRequest>,
 ) -> AppResult<Json<ExplorerRow>> {
+    let actor = require_auth(&state, &headers)?;
     if let Some(olt_id) = payload.olt_id {
         let exists: Option<(i64,)> = sqlx::query_as("SELECT id FROM olts WHERE id = ?")
             .bind(olt_id)
@@ -236,14 +300,26 @@ async fn update_router_mapping(
     .execute(&state.pool)
     .await?;
 
+    append_audit_log(
+        &state.pool,
+        &actor,
+        "update_mapping",
+        "router",
+        Some(router_id.to_string()),
+        None,
+    )
+    .await?;
+
     let row = fetch_explorer_row(&state.pool, router_id).await?;
     Ok(Json(row))
 }
 
 async fn rescan_router(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Path(router_id): Path<i64>,
 ) -> AppResult<Json<ScanRouterResponse>> {
+    let actor = require_auth(&state, &headers)?;
     let router = sqlx::query_as::<_, RouterRecord>("SELECT * FROM routers WHERE id = ?")
         .bind(router_id)
         .fetch_one(&state.pool)
@@ -257,7 +333,29 @@ async fn rescan_router(
     };
 
     let response = scan_router_payload(&state, payload).await?;
+    append_audit_log(
+        &state.pool,
+        &actor,
+        "rescan_router",
+        "router",
+        Some(router_id.to_string()),
+        Some(&response.router.wireguard_ip),
+    )
+    .await?;
     Ok(Json(response))
+}
+
+async fn list_audit_logs(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> AppResult<Json<Vec<AuditLog>>> {
+    let _actor = require_auth(&state, &headers)?;
+    let rows = sqlx::query_as::<_, AuditLog>(
+        "SELECT * FROM audit_logs ORDER BY created_at DESC, id DESC LIMIT 100",
+    )
+    .fetch_all(&state.pool)
+    .await?;
+    Ok(Json(rows))
 }
 
 async fn scan_router_payload(state: &AppState, payload: ScanRouterRequest) -> AppResult<ScanRouterResponse> {
@@ -337,6 +435,32 @@ async fn scan_router_payload(state: &AppState, payload: ScanRouterRequest) -> Ap
         router: explorer_row,
         matched_by,
     })
+}
+
+fn require_auth(state: &AppState, headers: &HeaderMap) -> AppResult<String> {
+    if !state.config.auth_enabled {
+        return Ok("anonymous".to_string());
+    }
+
+    let auth_header = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .ok_or(AppError::Unauthorized)?;
+
+    let Some(token) = auth_header.strip_prefix("Bearer ") else {
+        return Err(AppError::Unauthorized);
+    };
+
+    let expected = state.config.session_token.as_deref().ok_or(AppError::Unauthorized)?;
+    if token != expected {
+        return Err(AppError::Unauthorized);
+    }
+
+    Ok(state
+        .config
+        .admin_username
+        .clone()
+        .unwrap_or_else(|| "admin".to_string()))
 }
 
 fn resolve_credentials(state: &AppState, payload: &ScanRouterRequest) -> AppResult<(String, String)> {
@@ -580,6 +704,32 @@ async fn mark_router_error(pool: &SqlitePool, router_id: i64, error_message: &st
     .bind(now_rfc3339())
     .bind(now_rfc3339())
     .bind(router_id)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+async fn append_audit_log(
+    pool: &SqlitePool,
+    actor: &str,
+    action: &str,
+    target_type: &str,
+    target_id: Option<String>,
+    detail: Option<&str>,
+) -> AppResult<()> {
+    sqlx::query(
+        r#"
+        INSERT INTO audit_logs (actor, action, target_type, target_id, detail, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        "#,
+    )
+    .bind(actor)
+    .bind(action)
+    .bind(target_type)
+    .bind(target_id)
+    .bind(detail)
+    .bind(now_rfc3339())
     .execute(pool)
     .await?;
 

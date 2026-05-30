@@ -18,6 +18,8 @@ pub enum AppError {
     Multipart(#[from] axum::extract::multipart::MultipartError),
     #[error("invalid input: {0}")]
     BadRequest(String),
+    #[error("unauthorized")]
+    Unauthorized,
     #[error("upstream API error: {0}")]
     Upstream(String),
     #[error("internal error: {0}")]
@@ -33,6 +35,7 @@ impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let status = match self {
             AppError::BadRequest(_) => StatusCode::BAD_REQUEST,
+            AppError::Unauthorized => StatusCode::UNAUTHORIZED,
             AppError::Upstream(_) => StatusCode::BAD_GATEWAY,
             AppError::Multipart(_) => StatusCode::BAD_REQUEST,
             AppError::Database(_)

@@ -122,6 +122,7 @@ pub struct HealthResponse {
     pub status: String,
     pub database: String,
     pub default_credentials: bool,
+    pub auth_enabled: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -134,6 +135,29 @@ pub struct OltOption {
 #[derive(Debug, Clone, Deserialize)]
 pub struct UpdateRouterMappingRequest {
     pub olt_id: Option<i64>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct LoginRequest {
+    pub username: String,
+    pub password: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct LoginResponse {
+    pub token: String,
+    pub username: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct AuditLog {
+    pub id: i64,
+    pub actor: String,
+    pub action: String,
+    pub target_type: String,
+    pub target_id: Option<String>,
+    pub detail: Option<String>,
+    pub created_at: String,
 }
 
 pub fn now_rfc3339() -> String {
