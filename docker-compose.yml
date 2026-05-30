@@ -15,7 +15,14 @@ services:
       MIKROTIK_USERNAME: admin
       MIKROTIK_PASSWORD: change-me
       MIKROTIK_ALLOW_INSECURE_TLS: "true"
+      MIKROTIK_REQUEST_TIMEOUT_SECS: "20"
+      MAX_SCAN_CONCURRENCY: "8"
     volumes:
       - ./data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://127.0.0.1:8080/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     restart: unless-stopped
-

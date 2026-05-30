@@ -34,6 +34,7 @@ impl IntoResponse for AppError {
         let status = match self {
             AppError::BadRequest(_) => StatusCode::BAD_REQUEST,
             AppError::Upstream(_) => StatusCode::BAD_GATEWAY,
+            AppError::Multipart(_) => StatusCode::BAD_REQUEST,
             AppError::Database(_)
             | AppError::HttpClient(_)
             | AppError::Io(_)

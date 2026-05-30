@@ -12,7 +12,7 @@ FROM debian:bookworm-slim AS runtime
 WORKDIR /app
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates openssl sqlite3 \
+    && apt-get install -y --no-install-recommends ca-certificates curl openssl sqlite3 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /app/target/release/netking-ipam /usr/local/bin/netking-ipam
@@ -25,5 +25,7 @@ ENV DATABASE_URL=sqlite://data/netking.db
 
 EXPOSE 8080
 
-CMD ["netking-ipam"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD curl --fail http://127.0.0.1:8080/api/health || exit 1
 
+CMD ["netking-ipam"]

@@ -41,3 +41,23 @@ pub fn ranges_to_scopes(raw_ranges: &str) -> Vec<AddressScope> {
         .collect()
 }
 
+#[cfg(test)]
+mod tests {
+    use std::net::{IpAddr, Ipv4Addr};
+
+    use super::{parse_scope, AddressScope};
+
+    #[test]
+    fn parses_cidr_scope() {
+        let scope = parse_scope("10.10.10.0/24").expect("cidr should parse");
+        assert!(scope.contains_ip(IpAddr::V4(Ipv4Addr::new(10, 10, 10, 5))));
+    }
+
+    #[test]
+    fn parses_range_scope() {
+        let scope = parse_scope("10.10.10.10-10.10.10.20").expect("range should parse");
+        assert!(matches!(scope, AddressScope::Range(_, _)));
+        assert!(scope.contains_ip(IpAddr::V4(Ipv4Addr::new(10, 10, 10, 15))));
+        assert!(!scope.contains_ip(IpAddr::V4(Ipv4Addr::new(10, 10, 10, 30))));
+    }
+}

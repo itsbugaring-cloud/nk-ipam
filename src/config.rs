@@ -6,9 +6,11 @@ use crate::app_error::{AppError, AppResult};
 pub struct AppConfig {
     pub bind_addr: SocketAddr,
     pub database_url: String,
-    pub mikrotik_username: String,
-    pub mikrotik_password: String,
+    pub mikrotik_username: Option<String>,
+    pub mikrotik_password: Option<String>,
     pub allow_insecure_tls: bool,
+    pub request_timeout_secs: u64,
+    pub max_scan_concurrency: usize,
 }
 
 impl AppConfig {
@@ -27,14 +29,23 @@ impl AppConfig {
             bind_addr,
             database_url: env::var("DATABASE_URL")
                 .unwrap_or_else(|_| "sqlite://data/netking.db".to_string()),
-            mikrotik_username: env::var("MIKROTIK_USERNAME")
-                .map_err(|_| AppError::BadRequest("MIKROTIK_USERNAME is required".to_string()))?,
-            mikrotik_password: env::var("MIKROTIK_PASSWORD")
-                .map_err(|_| AppError::BadRequest("MIKROTIK_PASSWORD is required".to_string()))?,
+            mikrotik_username: env::var("MIKROTIK_USERNAME").ok(),
+            mikrotik_password: env::var("MIKROTIK_PASSWORD").ok(),
             allow_insecure_tls: env::var("MIKROTIK_ALLOW_INSECURE_TLS")
                 .unwrap_or_else(|_| "true".to_string())
                 .eq_ignore_ascii_case("true"),
+            request_timeout_secs: env::var("MIKROTIK_REQUEST_TIMEOUT_SECS")
+                .unwrap_or_else(|_| "20".to_string())
+                .parse::<u64>()
+                .map_err(|err| {
+                    AppError::BadRequest(format!("MIKROTIK_REQUEST_TIMEOUT_SECS invalid: {err}"))
+                })?,
+            max_scan_concurrency: env::var("MAX_SCAN_CONCURRENCY")
+                .unwrap_or_else(|_| "8".to_string())
+                .parse::<usize>()
+                .map_err(|err| {
+                    AppError::BadRequest(format!("MAX_SCAN_CONCURRENCY invalid: {err}"))
+                })?,
         })
     }
 }
-

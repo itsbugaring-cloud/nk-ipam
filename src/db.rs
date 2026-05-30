@@ -9,6 +9,8 @@ pub async fn init_pool(database_url: &str) -> AppResult<SqlitePool> {
         .await?;
 
     sqlx::migrate!("./migrations").run(&pool).await?;
+    sqlx::query("PRAGMA journal_mode = WAL;").execute(&pool).await?;
+    sqlx::query("PRAGMA busy_timeout = 5000;").execute(&pool).await?;
+    sqlx::query("PRAGMA foreign_keys = ON;").execute(&pool).await?;
     Ok(pool)
 }
-

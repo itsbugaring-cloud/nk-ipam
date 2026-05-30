@@ -18,6 +18,9 @@ pub struct RouterRecord {
     pub name: String,
     pub wireguard_ip: String,
     pub api_base_url: String,
+    pub auth_username: Option<String>,
+    pub auth_password: Option<String>,
+    pub auth_source: String,
     pub connection_status: String,
     pub mapped_olt_id: Option<i64>,
     pub last_error: Option<String>,
@@ -42,6 +45,7 @@ pub struct ExplorerRow {
     pub router_id: i64,
     pub device_name: String,
     pub wireguard_ip: String,
+    pub auth_source: String,
     pub olt_name: Option<String>,
     pub olt_ip: Option<String>,
     pub ip_pools: Vec<String>,
@@ -54,12 +58,35 @@ pub struct ExplorerRow {
 pub struct ScanRouterRequest {
     pub wireguard_ip: String,
     pub device_name: Option<String>,
+    pub username: Option<String>,
+    pub password: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct BulkScanRequest {
+    pub routers: Vec<ScanRouterRequest>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ScanRouterResponse {
     pub router: ExplorerRow,
     pub matched_by: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct BulkScanResponse {
+    pub success_count: usize,
+    pub failure_count: usize,
+    pub results: Vec<BulkScanItemResult>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct BulkScanItemResult {
+    pub wireguard_ip: String,
+    pub success: bool,
+    pub matched_by: Option<String>,
+    pub router: Option<ExplorerRow>,
+    pub error: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -87,8 +114,14 @@ pub struct ImportBookmarksResponse {
     pub imported: usize,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct HealthResponse {
+    pub status: String,
+    pub database: String,
+    pub default_credentials: bool,
+}
+
 pub fn now_rfc3339() -> String {
     let now: DateTime<Utc> = Utc::now();
     now.to_rfc3339()
 }
-

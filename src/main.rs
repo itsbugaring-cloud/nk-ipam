@@ -26,7 +26,11 @@ async fn main() -> AppResult<()> {
     let pool = db::init_pool(&config.database_url).await?;
     let mikrotik = MikrotikClient::new(&config)?;
 
-    let api_router = routes::build_router(AppState { pool, mikrotik });
+    let api_router = routes::build_router(AppState {
+        pool,
+        mikrotik,
+        config: config.clone(),
+    });
     let app = Router::new()
         .merge(api_router)
         .nest_service("/", ServeDir::new("static").append_index_html_on_directories(true))
@@ -58,4 +62,3 @@ fn ensure_sqlite_parent_dir(database_url: &str) -> AppResult<()> {
     }
     Ok(())
 }
-

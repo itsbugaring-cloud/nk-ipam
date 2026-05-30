@@ -51,3 +51,23 @@ pub fn parse_bookmarks_html(html: &str) -> AppResult<Vec<BookmarkOlt>> {
     Ok(items)
 }
 
+#[cfg(test)]
+mod tests {
+    use super::parse_bookmarks_html;
+
+    #[test]
+    fn extracts_olt_name_and_ip_from_bookmarks() {
+        let html = r#"
+        <DL><p>
+          <DT><A HREF="http://10.10.10.2/">OLT-Cikarang</A>
+          <DT><A HREF="https://172.16.1.20/login">OLT-Bekasi</A>
+        </DL><p>
+        "#;
+
+        let parsed = parse_bookmarks_html(html).expect("parser should extract records");
+        assert_eq!(parsed.len(), 2);
+        assert_eq!(parsed[0].name, "OLT-Cikarang");
+        assert_eq!(parsed[0].ip_address, "10.10.10.2");
+        assert_eq!(parsed[1].ip_address, "172.16.1.20");
+    }
+}

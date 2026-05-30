@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use reqwest::Client;
 
 use crate::{
@@ -9,39 +11,46 @@ use crate::{
 #[derive(Clone)]
 pub struct MikrotikClient {
     http: Client,
-    username: String,
-    password: String,
 }
 
 impl MikrotikClient {
     pub fn new(config: &AppConfig) -> AppResult<Self> {
         let http = Client::builder()
             .danger_accept_invalid_certs(config.allow_insecure_tls)
+            .timeout(Duration::from_secs(config.request_timeout_secs))
             .build()?;
 
-        Ok(Self {
-            http,
-            username: config.mikrotik_username.clone(),
-            password: config.mikrotik_password.clone(),
-        })
+        Ok(Self { http })
     }
 
-    pub async fn fetch_pools(&self, wireguard_ip: &str) -> AppResult<Vec<RouterApiPool>> {
-        self.get_json(&format!("https://{wireguard_ip}/rest/ip/pool")).await
+    pub async fn fetch_pools(
+        &self,
+        wireguard_ip: &str,
+        username: &str,
+        password: &str,
+    ) -> AppResult<Vec<RouterApiPool>> {
+        self.get_json(&format!("https://{wireguard_ip}/rest/ip/pool"), username, password)
+            .await
     }
 
-    pub async fn fetch_routes(&self, wireguard_ip: &str) -> AppResult<Vec<RouterApiRoute>> {
-        self.get_json(&format!("https://{wireguard_ip}/rest/ip/route")).await
+    pub async fn fetch_routes(
+        &self,
+        wireguard_ip: &str,
+        username: &str,
+        password: &str,
+    ) -> AppResult<Vec<RouterApiRoute>> {
+        self.get_json(&format!("https://{wireguard_ip}/rest/ip/route"), username, password)
+            .await
     }
 
-    async fn get_json<T>(&self, url: &str) -> AppResult<T>
+    async fn get_json<T>(&self, url: &str, username: &str, password: &str) -> AppResult<T>
     where
         T: serde::de::DeserializeOwned,
     {
         let response = self
             .http
             .get(url)
-            .basic_auth(&self.username, Some(&self.password))
+            .basic_auth(username, Some(password))
             .send()
             .await?;
 
@@ -56,4 +65,3 @@ impl MikrotikClient {
         Ok(response.json::<T>().await?)
     }
 }
-

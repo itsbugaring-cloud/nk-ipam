@@ -5,14 +5,16 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use serde_json::json;
+use futures_util::{stream, StreamExt};
 use sqlx::SqlitePool;
 
 use crate::{
     app_error::{AppError, AppResult},
+    config::AppConfig,
     mikrotik::MikrotikClient,
     models::{
-        now_rfc3339, BookmarkOlt, ExplorerRow, ImportBookmarksResponse, RouterApiRoute, ScanRouterRequest,
+        now_rfc3339, BookmarkOlt, BulkScanItemResult, BulkScanRequest, BulkScanResponse, ExplorerRow,
+        HealthResponse, ImportBookmarksResponse, RouterApiPool, RouterApiRoute, ScanRouterRequest,
         ScanRouterResponse,
     },
     net::{parse_scope, ranges_to_scopes},
@@ -23,6 +25,7 @@ use crate::{
 pub struct AppState {
     pub pool: SqlitePool,
     pub mikrotik: MikrotikClient,
+    pub config: AppConfig,
 }
 
 pub fn build_router(state: AppState) -> Router {
@@ -30,12 +33,28 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/health", get(health))
         .route("/api/bookmarks/import", post(import_bookmarks))
         .route("/api/routers/scan", post(scan_router))
+        .route("/api/routers/bulk-scan", post(bulk_scan_routers))
         .route("/api/explorer", get(list_explorer))
         .with_state(state)
 }
 
-async fn health() -> Json<serde_json::Value> {
-    Json(json!({ "status": "ok" }))
+async fn health(State(state): State<AppState>) -> AppResult<Json<HealthResponse>> {
+    let database = match sqlx::query_scalar::<_, i64>("SELECT 1")
+        .fetch_one(&state.pool)
+        .await
+    {
+        Ok(_) => "ok",
+        Err(_) => "error",
+    };
+
+    let status = if database == "ok" { "ok" } else { "degraded" }.to_string();
+
+    Ok(Json(HealthResponse {
+        status,
+        database: database.to_string(),
+        default_credentials: state.config.mikrotik_username.is_some()
+            && state.config.mikrotik_password.is_some(),
+    }))
 }
 
 async fn import_bookmarks(
@@ -61,17 +80,104 @@ async fn scan_router(
     State(state): State<AppState>,
     Json(payload): Json<ScanRouterRequest>,
 ) -> AppResult<Json<ScanRouterResponse>> {
-    let wireguard_ip = payload.wireguard_ip.trim();
+    let result = scan_router_payload(&state, payload).await?;
+    Ok(Json(result))
+}
+
+async fn bulk_scan_routers(
+    State(state): State<AppState>,
+    Json(payload): Json<BulkScanRequest>,
+) -> AppResult<Json<BulkScanResponse>> {
+    if payload.routers.is_empty() {
+        return Err(AppError::BadRequest(
+            "routers collection must contain at least one item".to_string(),
+        ));
+    }
+
+    let concurrency = state.config.max_scan_concurrency.max(1);
+    let results = stream::iter(payload.routers.into_iter().map(|router| {
+        let state = state.clone();
+        async move {
+            let wireguard_ip = router.wireguard_ip.clone();
+            match scan_router_payload(&state, router).await {
+                Ok(response) => BulkScanItemResult {
+                    wireguard_ip,
+                    success: true,
+                    matched_by: response.matched_by,
+                    router: Some(response.router),
+                    error: None,
+                },
+                Err(err) => BulkScanItemResult {
+                    wireguard_ip,
+                    success: false,
+                    matched_by: None,
+                    router: None,
+                    error: Some(err.to_string()),
+                },
+            }
+        }
+    }))
+    .buffer_unordered(concurrency)
+    .collect::<Vec<_>>()
+    .await;
+
+    let success_count = results.iter().filter(|item| item.success).count();
+    let failure_count = results.len().saturating_sub(success_count);
+
+    Ok(Json(BulkScanResponse {
+        success_count,
+        failure_count,
+        results,
+    }))
+}
+
+async fn list_explorer(State(state): State<AppState>) -> AppResult<Json<Vec<ExplorerRow>>> {
+    let rows = sqlx::query_as::<_, crate::models::RouterRecord>(
+        "SELECT * FROM routers ORDER BY updated_at DESC, id DESC",
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
+    let mut items = Vec::with_capacity(rows.len());
+    for row in rows {
+        items.push(fetch_explorer_row(&state.pool, row.id).await?);
+    }
+
+    Ok(Json(items))
+}
+
+async fn scan_router_payload(state: &AppState, payload: ScanRouterRequest) -> AppResult<ScanRouterResponse> {
+    let wireguard_ip = payload.wireguard_ip.trim().to_string();
     if wireguard_ip.is_empty() {
         return Err(AppError::BadRequest("wireguard_ip is required".to_string()));
     }
 
     let device_name = payload
         .device_name
+        .clone()
         .unwrap_or_else(|| format!("Router-{wireguard_ip}"));
-    let router_id = upsert_router(&state.pool, &device_name, wireguard_ip).await?;
+    let credentials = resolve_credentials(state, &payload)?;
+    let auth_source = if payload.username.as_deref().is_some() && payload.password.as_deref().is_some() {
+        "router"
+    } else {
+        "env"
+    };
 
-    let pools = match state.mikrotik.fetch_pools(wireguard_ip).await {
+    let router_id = upsert_router(
+        &state.pool,
+        &device_name,
+        &wireguard_ip,
+        payload.username.as_deref(),
+        payload.password.as_deref(),
+        auth_source,
+    )
+    .await?;
+
+    let pools = match state
+        .mikrotik
+        .fetch_pools(&wireguard_ip, &credentials.0, &credentials.1)
+        .await
+    {
         Ok(pools) => pools,
         Err(err) => {
             mark_router_error(&state.pool, router_id, &err.to_string()).await?;
@@ -79,7 +185,11 @@ async fn scan_router(
         }
     };
 
-    let routes = match state.mikrotik.fetch_routes(wireguard_ip).await {
+    let routes = match state
+        .mikrotik
+        .fetch_routes(&wireguard_ip, &credentials.0, &credentials.1)
+        .await
+    {
         Ok(routes) => routes,
         Err(err) => {
             mark_router_error(&state.pool, router_id, &err.to_string()).await?;
@@ -88,7 +198,6 @@ async fn scan_router(
     };
 
     replace_ip_pools(&state.pool, router_id, &pools).await?;
-
     let mapping = find_matching_olt(&state.pool, &pools, &routes).await?;
 
     sqlx::query(
@@ -109,25 +218,25 @@ async fn scan_router(
     let explorer_row = fetch_explorer_row(&state.pool, router_id).await?;
     let matched_by = mapping.map(|(_, _, reason)| reason);
 
-    Ok(Json(ScanRouterResponse {
+    Ok(ScanRouterResponse {
         router: explorer_row,
         matched_by,
-    }))
+    })
 }
 
-async fn list_explorer(State(state): State<AppState>) -> AppResult<Json<Vec<ExplorerRow>>> {
-    let rows = sqlx::query_as::<_, crate::models::RouterRecord>(
-        "SELECT * FROM routers ORDER BY updated_at DESC, id DESC",
-    )
-    .fetch_all(&state.pool)
-    .await?;
+fn resolve_credentials(state: &AppState, payload: &ScanRouterRequest) -> AppResult<(String, String)> {
+    let username = payload
+        .username
+        .clone()
+        .or_else(|| state.config.mikrotik_username.clone())
+        .ok_or_else(|| AppError::BadRequest("username is required either in request or env".to_string()))?;
+    let password = payload
+        .password
+        .clone()
+        .or_else(|| state.config.mikrotik_password.clone())
+        .ok_or_else(|| AppError::BadRequest("password is required either in request or env".to_string()))?;
 
-    let mut items = Vec::with_capacity(rows.len());
-    for row in rows {
-        items.push(fetch_explorer_row(&state.pool, row.id).await?);
-    }
-
-    Ok(Json(items))
+    Ok((username, password))
 }
 
 async fn upsert_olts(pool: &SqlitePool, olts: &[BookmarkOlt]) -> AppResult<usize> {
@@ -154,15 +263,27 @@ async fn upsert_olts(pool: &SqlitePool, olts: &[BookmarkOlt]) -> AppResult<usize
     Ok(inserted)
 }
 
-async fn upsert_router(pool: &SqlitePool, device_name: &str, wireguard_ip: &str) -> AppResult<i64> {
+async fn upsert_router(
+    pool: &SqlitePool,
+    device_name: &str,
+    wireguard_ip: &str,
+    auth_username: Option<&str>,
+    auth_password: Option<&str>,
+    auth_source: &str,
+) -> AppResult<i64> {
     let api_base_url = format!("https://{wireguard_ip}/rest");
     sqlx::query(
         r#"
-        INSERT INTO routers (name, wireguard_ip, api_base_url, connection_status, updated_at)
-        VALUES (?, ?, ?, 'connecting', ?)
+        INSERT INTO routers (
+            name, wireguard_ip, api_base_url, auth_username, auth_password, auth_source, connection_status, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, 'connecting', ?)
         ON CONFLICT(wireguard_ip) DO UPDATE SET
             name = excluded.name,
             api_base_url = excluded.api_base_url,
+            auth_username = COALESCE(excluded.auth_username, routers.auth_username),
+            auth_password = COALESCE(excluded.auth_password, routers.auth_password),
+            auth_source = excluded.auth_source,
             connection_status = excluded.connection_status,
             updated_at = excluded.updated_at
         "#,
@@ -170,6 +291,9 @@ async fn upsert_router(pool: &SqlitePool, device_name: &str, wireguard_ip: &str)
     .bind(device_name)
     .bind(wireguard_ip)
     .bind(api_base_url)
+    .bind(auth_username)
+    .bind(auth_password)
+    .bind(auth_source)
     .bind(now_rfc3339())
     .execute(pool)
     .await?;
@@ -181,11 +305,7 @@ async fn upsert_router(pool: &SqlitePool, device_name: &str, wireguard_ip: &str)
     Ok(row.0)
 }
 
-async fn replace_ip_pools(
-    pool: &SqlitePool,
-    router_id: i64,
-    pools: &[crate::models::RouterApiPool],
-) -> AppResult<()> {
+async fn replace_ip_pools(pool: &SqlitePool, router_id: i64, pools: &[RouterApiPool]) -> AppResult<()> {
     sqlx::query("DELETE FROM ip_pools WHERE router_id = ?")
         .bind(router_id)
         .execute(pool)
@@ -220,7 +340,7 @@ async fn replace_ip_pools(
 
 async fn find_matching_olt(
     pool: &SqlitePool,
-    pools: &[crate::models::RouterApiPool],
+    pools: &[RouterApiPool],
     routes: &[RouterApiRoute],
 ) -> AppResult<Option<(i64, String, String)>> {
     let olts = sqlx::query_as::<_, crate::models::Olt>("SELECT * FROM olts")
@@ -282,6 +402,7 @@ async fn fetch_explorer_row(pool: &SqlitePool, router_id: i64) -> AppResult<Expl
         router_id: router.id,
         device_name: router.name,
         wireguard_ip: router.wireguard_ip,
+        auth_source: router.auth_source,
         olt_name: olt.as_ref().map(|item| item.name.clone()),
         olt_ip: olt.as_ref().map(|item| item.ip_address.clone()),
         ip_pools: pool_rows
