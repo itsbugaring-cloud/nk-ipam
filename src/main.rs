@@ -1,5 +1,6 @@
 mod app_error;
 mod config;
+mod crypto;
 mod db;
 mod mikrotik;
 mod models;

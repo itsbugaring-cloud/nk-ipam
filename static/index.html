@@ -11,13 +11,10 @@
   <style>
     :root {
       --nk-ink: #13222d;
-      --nk-paper: #f6f2e8;
-      --nk-sand: #dcc9a3;
       --nk-accent: #177e89;
       --nk-alert: #b2452e;
       --nk-olive: #516f46;
     }
-
     body {
       background:
         radial-gradient(circle at top left, rgba(220, 201, 163, 0.55), transparent 32%),
@@ -36,12 +33,23 @@
       <form id="loginForm" class="mt-5 grid gap-4">
         <input id="loginUsername" type="text" placeholder="Admin username" class="rounded-xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm" />
         <input id="loginPassword" type="password" placeholder="Admin password" class="rounded-xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm" />
-        <button id="loginButton" type="submit" class="rounded-xl bg-[var(--nk-ink)] px-5 py-3 text-sm font-semibold text-white">
-          Login
-        </button>
+        <button id="loginButton" type="submit" class="rounded-xl bg-[var(--nk-ink)] px-5 py-3 text-sm font-semibold text-white">Login</button>
       </form>
     </div>
   </div>
+
+  <aside id="detailDrawer" class="fixed right-0 top-0 z-40 h-full w-full max-w-2xl translate-x-full overflow-y-auto border-l border-stone-300 bg-white p-6 shadow-2xl transition-transform duration-300">
+    <div class="flex items-start justify-between gap-4">
+      <div>
+        <p class="text-xs uppercase tracking-[0.25em] text-stone-500">Router Detail</p>
+        <h2 id="detailTitle" class="mt-2 text-2xl font-bold">-</h2>
+        <p id="detailMeta" class="mt-2 text-sm text-stone-600">-</p>
+      </div>
+      <button id="closeDetail" class="rounded-xl border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-700">Tutup</button>
+    </div>
+    <div id="detailBody" class="mt-6 grid gap-6"></div>
+  </aside>
+
   <div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
     <header class="mb-8 rounded-[28px] border border-stone-300/70 bg-white/80 p-6 shadow-xl shadow-stone-300/30 backdrop-blur">
       <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
@@ -56,6 +64,7 @@
           <div>Status API: <span id="apiStatus" class="font-semibold text-[var(--nk-olive)]">Checking...</span></div>
           <div class="mt-1">Mode: Direct RouterOS REST API via WireGuard</div>
           <div id="authBadge" class="mt-1 text-xs text-stone-500">Auth: pending</div>
+          <button id="logoutButton" class="mt-3 hidden rounded-xl border border-stone-300 px-3 py-2 text-xs font-semibold text-stone-700">Logout</button>
         </div>
       </div>
     </header>
@@ -66,9 +75,7 @@
         <p class="mt-2 text-sm text-stone-600">Unggah file <code>bookmarks.html</code> untuk mengisi data master OLT dari hasil export browser.</p>
         <form id="bookmarkForm" class="mt-5 space-y-4">
           <input id="bookmarkFile" name="file" type="file" accept=".html,text/html" class="block w-full rounded-xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm" />
-          <button type="submit" class="rounded-xl bg-[var(--nk-accent)] px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-cyan-900/20 transition hover:opacity-90">
-            Sinkronkan Bookmark OLT
-          </button>
+          <button type="submit" class="rounded-xl bg-[var(--nk-accent)] px-5 py-3 text-sm font-semibold text-white">Sinkronkan Bookmark OLT</button>
         </form>
       </div>
 
@@ -76,47 +83,60 @@
         <h2 class="text-xl font-semibold">Panel Pindai Perangkat</h2>
         <p class="mt-2 text-sm text-stone-600">Masukkan IP remote WireGuard router MikroTik. Gunakan kredensial global dari env atau override per perangkat saat staging.</p>
         <form id="scanForm" class="mt-5 grid gap-4">
-          <input id="deviceName" type="text" placeholder="Nama perangkat opsional, contoh: MK-Branch-JKT" class="rounded-xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm" />
+          <input id="deviceName" type="text" placeholder="Nama perangkat opsional" class="rounded-xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm" />
           <input id="wireguardIp" type="text" placeholder="Contoh: 10.10.50.1" class="rounded-xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm" required />
           <div class="grid gap-4 md:grid-cols-2">
             <input id="routerUsername" type="text" placeholder="Username router opsional" class="rounded-xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm" />
             <input id="routerPassword" type="password" placeholder="Password router opsional" class="rounded-xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm" />
           </div>
-          <button id="scanButton" type="submit" class="rounded-xl bg-[var(--nk-ink)] px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-slate-900/20 transition hover:opacity-90">
-            Tarik Data Router
-          </button>
+          <button id="scanButton" type="submit" class="rounded-xl bg-[var(--nk-ink)] px-5 py-3 text-sm font-semibold text-white">Tarik Data Router</button>
         </form>
 
         <div class="mt-6 rounded-2xl border border-stone-200 bg-stone-50/70 p-4">
           <h3 class="text-sm font-semibold uppercase tracking-[0.2em] text-stone-500">Bulk Scan</h3>
-          <p class="mt-2 text-sm text-stone-600">Satu IP per baris. Format opsional: <code>ip|nama|username|password</code>.</p>
+          <p class="mt-2 text-sm text-stone-600">Format opsional per baris: <code>ip|nama|username|password</code>.</p>
+          <div class="mt-4 flex flex-col gap-3 sm:flex-row">
+            <input id="bulkFile" type="file" accept=".txt,.csv,text/plain,text/csv" class="w-full rounded-xl border border-stone-300 bg-white px-4 py-3 text-sm" />
+            <button id="loadBulkFile" type="button" class="rounded-xl border border-stone-300 px-4 py-3 text-sm font-semibold text-stone-700">Muat File</button>
+          </div>
           <form id="bulkScanForm" class="mt-4 grid gap-4">
             <textarea id="bulkScanInput" rows="6" placeholder="10.10.50.1|MK-JKT-01|admin|secret&#10;10.10.50.2|MK-BDG-01" class="rounded-xl border border-stone-300 bg-white px-4 py-3 text-sm"></textarea>
-            <button id="bulkScanButton" type="submit" class="rounded-xl border border-[var(--nk-accent)] px-5 py-3 text-sm font-semibold text-[var(--nk-accent)] transition hover:bg-[var(--nk-accent)] hover:text-white">
-              Jalankan Bulk Scan
-            </button>
+            <button id="bulkScanButton" type="submit" class="rounded-xl border border-[var(--nk-accent)] px-5 py-3 text-sm font-semibold text-[var(--nk-accent)]">Jalankan Bulk Scan</button>
           </form>
         </div>
       </div>
     </section>
 
     <section class="mt-8 rounded-[28px] border border-stone-300/70 bg-white/85 p-6 shadow-xl shadow-stone-300/20">
-      <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+      <div class="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
         <div>
           <h2 class="text-xl font-semibold">Data Explorer</h2>
-          <p class="mt-2 text-sm text-stone-600">Live search akan mempengaruhi isi tabel sekaligus file Excel/PDF/CSV yang diekspor.</p>
+          <p class="mt-2 text-sm text-stone-600">Filter, sort, dan pagination sekarang diproses di backend agar siap untuk data yang lebih besar.</p>
         </div>
-        <div class="flex flex-col gap-3 sm:flex-row">
-          <input id="searchInput" type="search" placeholder="Cari nama perangkat, IP WG, OLT, atau status..." class="w-full rounded-xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm sm:w-80" />
-          <button id="exportCsv" class="rounded-xl border border-stone-400 px-4 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-700 hover:text-white">
-            Export CSV
-          </button>
-          <button id="exportExcel" class="rounded-xl border border-[var(--nk-olive)] px-4 py-3 text-sm font-semibold text-[var(--nk-olive)] transition hover:bg-[var(--nk-olive)] hover:text-white">
-            Export to Excel
-          </button>
-          <button id="exportPdf" class="rounded-xl border border-[var(--nk-alert)] px-4 py-3 text-sm font-semibold text-[var(--nk-alert)] transition hover:bg-[var(--nk-alert)] hover:text-white">
-            Export to PDF
-          </button>
+        <div class="flex flex-col gap-3 lg:flex-row lg:flex-wrap">
+          <input id="searchInput" type="search" placeholder="Cari nama perangkat, IP WG, OLT..." class="rounded-xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm lg:w-72" />
+          <select id="statusFilter" class="rounded-xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm">
+            <option value="all">Semua Status</option>
+            <option value="connected">Connected</option>
+            <option value="error">Error</option>
+            <option value="unmapped">Unmapped</option>
+            <option value="unknown">Unknown</option>
+          </select>
+          <select id="sortSelect" class="rounded-xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm">
+            <option value="last_scanned_at:desc">Last Scanned Terbaru</option>
+            <option value="device_name:asc">Nama A-Z</option>
+            <option value="wireguard_ip:asc">IP WG A-Z</option>
+            <option value="status:asc">Status</option>
+            <option value="olt:asc">OLT</option>
+          </select>
+          <select id="perPageSelect" class="rounded-xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm">
+            <option value="10">10 / page</option>
+            <option value="20" selected>20 / page</option>
+            <option value="50">50 / page</option>
+          </select>
+          <button id="exportCsv" class="rounded-xl border border-stone-400 px-4 py-3 text-sm font-semibold text-stone-700">Export CSV</button>
+          <button id="exportExcel" class="rounded-xl border border-[var(--nk-olive)] px-4 py-3 text-sm font-semibold text-[var(--nk-olive)]">Export Excel</button>
+          <button id="exportPdf" class="rounded-xl border border-[var(--nk-alert)] px-4 py-3 text-sm font-semibold text-[var(--nk-alert)]">Export PDF</button>
         </div>
       </div>
 
@@ -132,7 +152,7 @@
                 <th class="px-4 py-4">Auth</th>
                 <th class="px-4 py-4">OLT Mapping</th>
                 <th class="px-4 py-4">IP Pool Pelanggan</th>
-                <th class="px-4 py-4">Status Koneksi</th>
+                <th class="px-4 py-4">Status</th>
                 <th class="px-4 py-4">Aksi</th>
               </tr>
             </thead>
@@ -140,15 +160,20 @@
           </table>
         </div>
       </div>
+
+      <div class="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div id="paginationInfo" class="text-sm text-stone-600">-</div>
+        <div class="flex items-center gap-3">
+          <button id="prevPage" class="rounded-xl border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-700">Prev</button>
+          <div id="pageLabel" class="text-sm font-semibold text-stone-700">Page 1</div>
+          <button id="nextPage" class="rounded-xl border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-700">Next</button>
+        </div>
+      </div>
     </section>
 
     <section class="mt-8 rounded-[28px] border border-stone-300/70 bg-white/85 p-6 shadow-xl shadow-stone-300/20">
-      <div class="flex items-center justify-between">
-        <div>
-          <h2 class="text-xl font-semibold">Audit Activity</h2>
-          <p class="mt-2 text-sm text-stone-600">100 aktivitas terbaru dari dashboard dan API.</p>
-        </div>
-      </div>
+      <h2 class="text-xl font-semibold">Audit Activity</h2>
+      <p class="mt-2 text-sm text-stone-600">100 aktivitas terbaru dari dashboard dan API.</p>
       <div id="auditLogList" class="mt-6 grid gap-3"></div>
     </section>
   </div>
@@ -161,6 +186,12 @@
       authEnabled: false,
       token: localStorage.getItem('netking_ipam_token') || '',
       username: localStorage.getItem('netking_ipam_user') || '',
+      currentPage: 1,
+      perPage: 20,
+      total: 0,
+      status: 'all',
+      sort: 'last_scanned_at:desc',
+      query: '',
       bootstrapped: false
     };
 
@@ -170,8 +201,14 @@
       loginUsername: document.getElementById('loginUsername'),
       loginPassword: document.getElementById('loginPassword'),
       loginButton: document.getElementById('loginButton'),
+      detailDrawer: document.getElementById('detailDrawer'),
+      detailTitle: document.getElementById('detailTitle'),
+      detailMeta: document.getElementById('detailMeta'),
+      detailBody: document.getElementById('detailBody'),
+      closeDetail: document.getElementById('closeDetail'),
       apiStatus: document.getElementById('apiStatus'),
       authBadge: document.getElementById('authBadge'),
+      logoutButton: document.getElementById('logoutButton'),
       flashMessage: document.getElementById('flashMessage'),
       bookmarkForm: document.getElementById('bookmarkForm'),
       bookmarkFile: document.getElementById('bookmarkFile'),
@@ -181,16 +218,27 @@
       wireguardIp: document.getElementById('wireguardIp'),
       routerUsername: document.getElementById('routerUsername'),
       routerPassword: document.getElementById('routerPassword'),
+      bulkFile: document.getElementById('bulkFile'),
+      loadBulkFile: document.getElementById('loadBulkFile'),
       bulkScanForm: document.getElementById('bulkScanForm'),
       bulkScanInput: document.getElementById('bulkScanInput'),
       bulkScanButton: document.getElementById('bulkScanButton'),
       searchInput: document.getElementById('searchInput'),
+      statusFilter: document.getElementById('statusFilter'),
+      sortSelect: document.getElementById('sortSelect'),
+      perPageSelect: document.getElementById('perPageSelect'),
       tableBody: document.getElementById('tableBody'),
       exportCsv: document.getElementById('exportCsv'),
       exportExcel: document.getElementById('exportExcel'),
       exportPdf: document.getElementById('exportPdf'),
+      paginationInfo: document.getElementById('paginationInfo'),
+      pageLabel: document.getElementById('pageLabel'),
+      prevPage: document.getElementById('prevPage'),
+      nextPage: document.getElementById('nextPage'),
       auditLogList: document.getElementById('auditLogList')
     };
+
+    let searchTimer = null;
 
     async function authFetch(url, options = {}) {
       const headers = new Headers(options.headers || {});
@@ -200,13 +248,18 @@
 
       const response = await fetch(url, { ...options, headers });
       if (response.status === 401) {
-        state.token = '';
-        state.username = '';
-        localStorage.removeItem('netking_ipam_token');
-        localStorage.removeItem('netking_ipam_user');
+        clearSession();
         showLogin();
       }
       return response;
+    }
+
+    function clearSession() {
+      state.token = '';
+      state.username = '';
+      localStorage.removeItem('netking_ipam_token');
+      localStorage.removeItem('netking_ipam_user');
+      elements.logoutButton.classList.add('hidden');
     }
 
     function setFlash(message, type = 'info') {
@@ -215,7 +268,6 @@
         success: 'bg-emerald-50 text-emerald-900 border border-emerald-200',
         error: 'bg-rose-50 text-rose-900 border border-rose-200'
       };
-
       elements.flashMessage.className = `mt-4 rounded-2xl px-4 py-3 text-sm ${palette[type] || palette.info}`;
       elements.flashMessage.textContent = message;
       elements.flashMessage.classList.remove('hidden');
@@ -228,33 +280,25 @@
     function showLogin() {
       elements.loginOverlay.classList.remove('hidden');
       elements.loginOverlay.classList.add('flex');
-      elements.authBadge.textContent = state.authEnabled
-        ? `Auth: locked${state.username ? ` as ${state.username}` : ''}`
-        : 'Auth: disabled';
+      elements.authBadge.textContent = state.authEnabled ? 'Auth: locked' : 'Auth: disabled';
     }
 
     function hideLogin() {
       elements.loginOverlay.classList.add('hidden');
       elements.loginOverlay.classList.remove('flex');
-      elements.authBadge.textContent = state.authEnabled
-        ? `Auth: active as ${state.username || 'admin'}`
-        : 'Auth: disabled';
+      elements.authBadge.textContent = state.authEnabled ? `Auth: active as ${state.username || 'admin'}` : 'Auth: disabled';
+      if (state.authEnabled) {
+        elements.logoutButton.classList.remove('hidden');
+      }
     }
 
     function normalizeRows(rows) {
-      return rows.map((row) => ({
-        ...row,
-        ip_pools: Array.isArray(row.ip_pools) ? row.ip_pools : []
-      }));
+      return rows.map((row) => ({ ...row, ip_pools: Array.isArray(row.ip_pools) ? row.ip_pools : [] }));
     }
 
     function renderAuditLogs(rows) {
       if (!rows.length) {
-        elements.auditLogList.innerHTML = `
-          <div class="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-5 text-sm text-stone-500">
-            Belum ada aktivitas yang tercatat.
-          </div>
-        `;
+        elements.auditLogList.innerHTML = '<div class="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-5 text-sm text-stone-500">Belum ada aktivitas yang tercatat.</div>';
         return;
       }
 
@@ -264,7 +308,7 @@
             <div>
               <div class="text-sm font-semibold text-stone-800">${escapeHtml(row.action)}</div>
               <div class="mt-1 text-xs uppercase tracking-[0.18em] text-stone-500">
-                ${escapeHtml(row.actor)} • ${escapeHtml(row.target_type)}${row.target_id ? ` #${escapeHtml(row.target_id)}` : ''}
+                ${escapeHtml(row.actor)} | ${escapeHtml(row.target_type)}${row.target_id ? ` #${escapeHtml(row.target_id)}` : ''}
               </div>
             </div>
             <div class="text-xs text-stone-500">${escapeHtml(row.created_at)}</div>
@@ -276,13 +320,7 @@
 
     function renderTable(rows) {
       if (!rows.length) {
-        elements.tableBody.innerHTML = `
-          <tr>
-            <td colspan="7" class="px-4 py-10 text-center text-sm text-stone-500">
-              Belum ada data. Unggah bookmark OLT lalu lakukan scan ke router MikroTik.
-            </td>
-          </tr>
-        `;
+        elements.tableBody.innerHTML = '<tr><td colspan="7" class="px-4 py-10 text-center text-sm text-stone-500">Belum ada data sesuai filter saat ini.</td></tr>';
         return;
       }
 
@@ -293,34 +331,23 @@
             <div class="mt-1 text-xs text-stone-500">${escapeHtml(row.last_scanned_at || '-')}</div>
           </td>
           <td class="px-4 py-4 font-mono text-sm">${escapeHtml(row.wireguard_ip)}</td>
-          <td class="px-4 py-4 text-sm">
-            <span class="inline-flex rounded-full bg-stone-100 px-3 py-1 text-xs font-semibold text-stone-700">${escapeHtml(row.auth_source || 'env')}</span>
-          </td>
+          <td class="px-4 py-4 text-sm"><span class="inline-flex rounded-full bg-stone-100 px-3 py-1 text-xs font-semibold text-stone-700">${escapeHtml(row.auth_source || 'env')}</span></td>
           <td class="px-4 py-4 text-sm">
             <div>${escapeHtml(row.olt_name || '-')}</div>
             <div class="mt-1 font-mono text-xs text-stone-500">${escapeHtml(row.olt_ip || '-')}</div>
             ${row.mapped_by ? `<div class="mt-2 text-[11px] uppercase tracking-[0.18em] text-stone-400">${escapeHtml(row.mapped_by)}</div>` : ''}
           </td>
+          <td class="px-4 py-4 text-sm">${row.ip_pools.length ? row.ip_pools.map((item) => `<div class="mb-2 rounded-xl bg-stone-100 px-3 py-2 font-mono text-xs">${escapeHtml(item)}</div>`).join('') : '<span class="text-stone-400">-</span>'}</td>
           <td class="px-4 py-4 text-sm">
-            ${row.ip_pools.length ? row.ip_pools.map((item) => `<div class="mb-2 rounded-xl bg-stone-100 px-3 py-2 font-mono text-xs">${escapeHtml(item)}</div>`).join('') : '<span class="text-stone-400">-</span>'}
-          </td>
-          <td class="px-4 py-4 text-sm">
-            <span class="inline-flex rounded-full px-3 py-1 text-xs font-semibold ${row.connection_status === 'connected' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}">
-              ${escapeHtml(row.connection_status)}
-            </span>
+            <span class="inline-flex rounded-full px-3 py-1 text-xs font-semibold ${row.connection_status === 'connected' ? 'bg-emerald-100 text-emerald-700' : row.connection_status === 'error' ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'}">${escapeHtml(row.connection_status)}</span>
             ${row.last_error ? `<div class="mt-2 text-xs text-rose-600">${escapeHtml(row.last_error)}</div>` : ''}
           </td>
           <td class="px-4 py-4 text-sm">
             <div class="flex min-w-[220px] flex-col gap-2">
-              <button data-action="rescan" data-router-id="${row.router_id}" class="rounded-lg bg-stone-900 px-3 py-2 text-xs font-semibold text-white transition hover:opacity-90">
-                Rescan
-              </button>
-              <select data-action="mapping-select" data-router-id="${row.router_id}" class="rounded-lg border border-stone-300 bg-white px-3 py-2 text-xs">
-                ${renderOltOptions(row)}
-              </select>
-              <button data-action="map" data-router-id="${row.router_id}" class="rounded-lg border border-[var(--nk-accent)] px-3 py-2 text-xs font-semibold text-[var(--nk-accent)] transition hover:bg-[var(--nk-accent)] hover:text-white">
-                Simpan Mapping
-              </button>
+              <button data-action="detail" data-router-id="${row.router_id}" class="rounded-lg border border-stone-300 px-3 py-2 text-xs font-semibold text-stone-700">Detail</button>
+              <button data-action="rescan" data-router-id="${row.router_id}" class="rounded-lg bg-stone-900 px-3 py-2 text-xs font-semibold text-white">Rescan</button>
+              <select data-action="mapping-select" data-router-id="${row.router_id}" class="rounded-lg border border-stone-300 bg-white px-3 py-2 text-xs">${renderOltOptions(row)}</select>
+              <button data-action="map" data-router-id="${row.router_id}" class="rounded-lg border border-[var(--nk-accent)] px-3 py-2 text-xs font-semibold text-[var(--nk-accent)]">Simpan Mapping</button>
             </div>
           </td>
         </tr>
@@ -331,56 +358,80 @@
       const current = row.olt_name && row.olt_ip ? `${row.olt_name} (${row.olt_ip})` : 'Belum terhubung';
       const base = [`<option value="">Lepas mapping (${escapeHtml(current)})</option>`];
       const options = state.olts.map((olt) => {
-        const selected = String(olt.id) === String(row.olt_id || '') || olt.ip_address === row.olt_ip ? 'selected' : '';
+        const selected = String(olt.id) === String(row.olt_id || '') ? 'selected' : '';
         return `<option value="${escapeHtml(String(olt.id))}" ${selected}>${escapeHtml(olt.name)} (${escapeHtml(olt.ip_address)})</option>`;
       });
       return base.concat(options).join('');
     }
 
-    function applyFilter() {
-      const keyword = elements.searchInput.value.trim().toLowerCase();
-      state.filteredRows = state.rows.filter((row) => {
-        const haystack = [
-          row.device_name,
-          row.wireguard_ip,
-          row.auth_source || '',
-          row.olt_name || '',
-          row.olt_ip || '',
-          row.connection_status,
-          ...(row.ip_pools || [])
-        ].join(' ').toLowerCase();
-        return haystack.includes(keyword);
-      });
+    function updatePagination() {
+      const totalPages = Math.max(1, Math.ceil(state.total / state.perPage));
+      elements.pageLabel.textContent = `Page ${state.currentPage} / ${totalPages}`;
+      elements.paginationInfo.textContent = `Total ${state.total} router | ${state.perPage} per page`;
+      elements.prevPage.disabled = state.currentPage <= 1;
+      elements.nextPage.disabled = state.currentPage >= totalPages;
+    }
 
-      renderTable(state.filteredRows);
+    function buildExplorerQuery() {
+      const [sortBy, sortDir] = state.sort.split(':');
+      const params = new URLSearchParams({
+        page: String(state.currentPage),
+        per_page: String(state.perPage),
+        sort_by: sortBy,
+        sort_dir: sortDir
+      });
+      if (state.query) params.set('q', state.query);
+      if (state.status && state.status !== 'all') params.set('status', state.status);
+      return params.toString();
     }
 
     async function loadExplorer() {
-      const response = await authFetch('/api/explorer');
+      const response = await authFetch(`/api/explorer?${buildExplorerQuery()}`);
       const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || 'Gagal mengambil data explorer');
-      }
-      state.rows = normalizeRows(data);
-      applyFilter();
+      if (!response.ok) throw new Error(data.error || 'Gagal mengambil data explorer');
+      state.rows = normalizeRows(data.items || []);
+      state.filteredRows = [...state.rows];
+      state.total = Number(data.total || 0);
+      renderTable(state.rows);
+      updatePagination();
     }
 
     async function loadOlts() {
       const response = await authFetch('/api/olts');
       const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || 'Gagal mengambil daftar OLT');
-      }
+      if (!response.ok) throw new Error(data.error || 'Gagal mengambil daftar OLT');
       state.olts = Array.isArray(data) ? data : [];
     }
 
     async function loadAuditLogs() {
       const response = await authFetch('/api/audit-logs');
       const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || 'Gagal mengambil audit logs');
-      }
+      if (!response.ok) throw new Error(data.error || 'Gagal mengambil audit logs');
       renderAuditLogs(Array.isArray(data) ? data : []);
+    }
+
+    async function loadRouterDetail(routerId) {
+      const response = await authFetch(`/api/routers/${routerId}/detail`);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Gagal mengambil detail router');
+
+      elements.detailTitle.textContent = data.router.device_name;
+      elements.detailMeta.textContent = `${data.router.wireguard_ip} | ${data.router.connection_status} | mapping ${data.router.mapped_by || 'unmapped'}`;
+      elements.detailBody.innerHTML = `
+        <section class="rounded-2xl border border-stone-200 p-4">
+          <h3 class="text-lg font-semibold">IP Pools</h3>
+          <div class="mt-3 grid gap-2">
+            ${(data.pools || []).length ? data.pools.map((pool) => `<div class="rounded-xl bg-stone-50 px-3 py-2 text-sm"><span class="font-semibold">${escapeHtml(pool.pool_name)}</span><div class="mt-1 font-mono text-xs text-stone-600">${escapeHtml(pool.raw_ranges)}</div></div>`).join('') : '<div class="text-sm text-stone-500">Tidak ada pool tersimpan.</div>'}
+          </div>
+        </section>
+        <section class="rounded-2xl border border-stone-200 p-4">
+          <h3 class="text-lg font-semibold">Routes</h3>
+          <div class="mt-3 grid gap-2">
+            ${(data.routes || []).length ? data.routes.map((route) => `<div class="rounded-xl bg-stone-50 px-3 py-2 text-sm"><div class="font-mono text-xs text-stone-700">${escapeHtml(route.dst_address || '-')}</div><div class="mt-1 text-xs text-stone-500">${escapeHtml(route.comment || '-')}</div></div>`).join('') : '<div class="text-sm text-stone-500">Tidak ada route tersimpan.</div>'}
+          </div>
+        </section>
+      `;
+      elements.detailDrawer.classList.remove('translate-x-full');
     }
 
     async function checkHealth() {
@@ -388,9 +439,7 @@
         const response = await fetch('/api/health');
         const data = await response.json();
         state.authEnabled = Boolean(data.auth_enabled);
-        elements.apiStatus.textContent = data.status === 'ok'
-          ? `Online (${data.default_credentials ? 'env auth ready' : 'per-router auth required'})`
-          : 'Degraded';
+        elements.apiStatus.textContent = data.status === 'ok' ? `Online (${data.default_credentials ? 'env auth ready' : 'per-router auth required'})` : 'Degraded';
         if (state.authEnabled && !state.token) {
           showLogin();
         } else {
@@ -409,7 +458,6 @@
     async function handleLogin(event) {
       event.preventDefault();
       hideFlash();
-
       try {
         elements.loginButton.disabled = true;
         elements.loginButton.textContent = 'Logging in...';
@@ -422,17 +470,14 @@
           })
         });
         const data = await response.json();
-        if (!response.ok) {
-          throw new Error(data.error || 'Login gagal');
-        }
-
+        if (!response.ok) throw new Error(data.error || 'Login gagal');
         state.token = data.token;
         state.username = data.username;
         localStorage.setItem('netking_ipam_token', data.token);
         localStorage.setItem('netking_ipam_user', data.username);
+        state.bootstrapped = true;
         hideLogin();
         setFlash(`Login berhasil sebagai ${data.username}.`, 'success');
-        state.bootstrapped = true;
         await Promise.all([loadOlts(), loadExplorer(), loadAuditLogs()]);
       } catch (error) {
         setFlash(error.message, 'error');
@@ -445,26 +490,15 @@
     async function handleBookmarkUpload(event) {
       event.preventDefault();
       hideFlash();
-
       const file = elements.bookmarkFile.files[0];
-      if (!file) {
-        setFlash('Pilih file bookmarks.html terlebih dahulu.', 'error');
-        return;
-      }
-
+      if (!file) return setFlash('Pilih file bookmarks.html terlebih dahulu.', 'error');
       const formData = new FormData();
       formData.append('file', file);
-
       try {
         setFlash('Mengunggah dan memproses bookmark OLT...', 'info');
-        const response = await authFetch('/api/bookmarks/import', {
-          method: 'POST',
-          body: formData
-        });
+        const response = await authFetch('/api/bookmarks/import', { method: 'POST', body: formData });
         const data = await response.json();
-        if (!response.ok) {
-          throw new Error(data.error || 'Import bookmark gagal');
-        }
+        if (!response.ok) throw new Error(data.error || 'Import bookmark gagal');
         setFlash(`Sinkronisasi selesai. ${data.imported} record OLT diproses.`, 'success');
         await Promise.all([loadOlts(), loadExplorer(), loadAuditLogs()]);
       } catch (error) {
@@ -475,18 +509,11 @@
     async function handleScan(event) {
       event.preventDefault();
       hideFlash();
-
       const wireguardIp = elements.wireguardIp.value.trim();
-      if (!wireguardIp) {
-        setFlash('IP WireGuard wajib diisi.', 'error');
-        return;
-      }
-
+      if (!wireguardIp) return setFlash('IP WireGuard wajib diisi.', 'error');
       try {
         elements.scanButton.disabled = true;
         elements.scanButton.textContent = 'Memproses...';
-        setFlash(`Menarik data RouterOS dari ${wireguardIp}...`, 'info');
-
         const response = await authFetch('/api/routers/scan', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -498,13 +525,10 @@
           })
         });
         const data = await response.json();
-        if (!response.ok) {
-          throw new Error(data.error || 'Scan router gagal');
-        }
-
-        const mappingInfo = data.matched_by ? ` Mapping ditemukan via ${data.matched_by}.` : ' Mapping OLT belum ditemukan.';
-        setFlash(`Router ${data.router.device_name} berhasil disinkronkan.${mappingInfo}`, 'success');
+        if (!response.ok) throw new Error(data.error || 'Scan router gagal');
+        setFlash(`Router ${data.router.device_name} berhasil disinkronkan.`, 'success');
         elements.scanForm.reset();
+        state.currentPage = 1;
         await Promise.all([loadExplorer(), loadAuditLogs()]);
       } catch (error) {
         setFlash(error.message, 'error');
@@ -517,43 +541,24 @@
     async function handleBulkScan(event) {
       event.preventDefault();
       hideFlash();
-
-      const lines = elements.bulkScanInput.value
-        .split(/\r?\n/)
-        .map((line) => line.trim())
-        .filter(Boolean);
-
-      if (!lines.length) {
-        setFlash('Isi minimal satu IP WireGuard untuk bulk scan.', 'error');
-        return;
-      }
-
+      const lines = elements.bulkScanInput.value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+      if (!lines.length) return setFlash('Isi minimal satu IP WireGuard untuk bulk scan.', 'error');
       const routers = lines.map((line) => {
         const [wireguardIp, deviceName, username, password] = line.split('|').map((part) => part ? part.trim() : '');
-        return {
-          wireguard_ip: wireguardIp || '',
-          device_name: deviceName || null,
-          username: username || null,
-          password: password || null
-        };
+        return { wireguard_ip: wireguardIp || '', device_name: deviceName || null, username: username || null, password: password || null };
       });
-
       try {
         elements.bulkScanButton.disabled = true;
         elements.bulkScanButton.textContent = 'Bulk scan berjalan...';
-        setFlash(`Memproses ${routers.length} router dari daftar bulk scan...`, 'info');
-
         const response = await authFetch('/api/routers/bulk-scan', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ routers })
         });
         const data = await response.json();
-        if (!response.ok) {
-          throw new Error(data.error || 'Bulk scan gagal');
-        }
-
+        if (!response.ok) throw new Error(data.error || 'Bulk scan gagal');
         setFlash(`Bulk scan selesai. Success: ${data.success_count}, Failure: ${data.failure_count}.`, data.failure_count ? 'info' : 'success');
+        state.currentPage = 1;
         await Promise.all([loadExplorer(), loadAuditLogs()]);
       } catch (error) {
         setFlash(error.message, 'error');
@@ -565,40 +570,30 @@
 
     async function handleTableClick(event) {
       const button = event.target.closest('button[data-action]');
-      if (!button) {
-        return;
-      }
-
+      if (!button) return;
       const routerId = button.dataset.routerId;
       const action = button.dataset.action;
 
-      if (action === 'rescan') {
-        try {
+      try {
+        if (action === 'detail') {
+          await loadRouterDetail(routerId);
+          return;
+        }
+
+        if (action === 'rescan') {
           button.disabled = true;
           button.textContent = 'Rescan...';
-          setFlash(`Menjalankan rescan router #${routerId}...`, 'info');
-
           const response = await authFetch(`/api/routers/${routerId}/rescan`, { method: 'POST' });
           const data = await response.json();
-          if (!response.ok) {
-            throw new Error(data.error || 'Rescan gagal');
-          }
-
+          if (!response.ok) throw new Error(data.error || 'Rescan gagal');
           setFlash(`Rescan berhasil untuk ${data.router.device_name}.`, 'success');
           await Promise.all([loadExplorer(), loadAuditLogs()]);
-        } catch (error) {
-          setFlash(error.message, 'error');
-        } finally {
-          button.disabled = false;
-          button.textContent = 'Rescan';
+          return;
         }
-      }
 
-      if (action === 'map') {
-        const select = elements.tableBody.querySelector(`select[data-router-id="${routerId}"]`);
-        const oltId = select ? (select.value || null) : null;
-
-        try {
+        if (action === 'map') {
+          const select = elements.tableBody.querySelector(`select[data-router-id="${routerId}"]`);
+          const oltId = select ? (select.value || null) : null;
           button.disabled = true;
           button.textContent = 'Menyimpan...';
           const response = await authFetch(`/api/routers/${routerId}/map-olt`, {
@@ -607,78 +602,113 @@
             body: JSON.stringify({ olt_id: oltId ? Number(oltId) : null })
           });
           const data = await response.json();
-          if (!response.ok) {
-            throw new Error(data.error || 'Update mapping gagal');
-          }
-
+          if (!response.ok) throw new Error(data.error || 'Update mapping gagal');
           setFlash(`Mapping OLT untuk ${data.device_name} berhasil diperbarui.`, 'success');
           await Promise.all([loadExplorer(), loadAuditLogs()]);
-        } catch (error) {
-          setFlash(error.message, 'error');
-        } finally {
-          button.disabled = false;
-          button.textContent = 'Simpan Mapping';
         }
+      } catch (error) {
+        setFlash(error.message, 'error');
+      } finally {
+        if (action === 'rescan') button.textContent = 'Rescan';
+        if (action === 'map') button.textContent = 'Simpan Mapping';
+        button.disabled = false;
       }
     }
 
+    async function handleLoadBulkFile() {
+      const file = elements.bulkFile.files[0];
+      if (!file) return setFlash('Pilih file .txt atau .csv terlebih dahulu.', 'error');
+      const content = await file.text();
+      const lines = content
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .map((line) => line.includes(',') && !line.includes('|') ? line.replaceAll(',', '|') : line);
+      elements.bulkScanInput.value = lines.join('\n');
+      setFlash(`${lines.length} baris berhasil dimuat dari file bulk.`, 'success');
+    }
+
+    function handleSearchInput() {
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(() => {
+        state.query = elements.searchInput.value.trim();
+        state.currentPage = 1;
+        loadExplorer().catch((error) => setFlash(error.message, 'error'));
+      }, 250);
+    }
+
     function exportToCsv() {
-      const keyword = encodeURIComponent(elements.searchInput.value.trim());
-      const url = keyword ? `/api/routers/export.csv?q=${keyword}` : '/api/routers/export.csv';
-      authFetch(url)
+      const params = buildExplorerQuery();
+      authFetch(`/api/routers/export.csv?${params}`)
         .then(async (response) => {
           if (!response.ok) {
             const data = await response.json().catch(() => ({}));
             throw new Error(data.error || 'Export CSV gagal');
           }
           const blob = await response.blob();
-          const href = URL.createObjectURL(blob);
+          const url = URL.createObjectURL(blob);
           const anchor = document.createElement('a');
-          anchor.href = href;
+          anchor.href = url;
           anchor.download = 'netking-ipam-explorer.csv';
           anchor.click();
-          URL.revokeObjectURL(href);
+          URL.revokeObjectURL(url);
         })
         .catch((error) => setFlash(error.message, 'error'));
     }
 
     function exportToExcel() {
-      const worksheet = XLSX.utils.json_to_sheet(state.filteredRows.map(mapExportRow));
-      const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, 'Explorer');
-      XLSX.writeFile(workbook, 'netking-ipam-explorer.xlsx');
+      fetchAllFilteredRows()
+        .then((rows) => {
+          const worksheet = XLSX.utils.json_to_sheet(rows.map(mapExportRow));
+          const workbook = XLSX.utils.book_new();
+          XLSX.utils.book_append_sheet(workbook, worksheet, 'Explorer');
+          XLSX.writeFile(workbook, 'netking-ipam-explorer.xlsx');
+        })
+        .catch((error) => setFlash(error.message, 'error'));
     }
 
     function exportToPdf() {
-      const { jsPDF } = window.jspdf;
-      const pdf = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
+      fetchAllFilteredRows()
+        .then((rows) => {
+          const { jsPDF } = window.jspdf;
+          const pdf = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
+          pdf.setFontSize(16);
+          pdf.text('Netking IPAM & Network Inventory Explorer', 40, 40);
+          pdf.setFontSize(10);
+          pdf.text(`Generated at ${new Date().toLocaleString()}`, 40, 58);
+          pdf.autoTable({
+            startY: 80,
+            head: [['Nama Perangkat', 'IP WireGuard', 'Auth', 'OLT Mapping', 'IP Pool Pelanggan', 'Status']],
+            body: rows.map((row) => [
+              row.device_name,
+              row.wireguard_ip,
+              row.auth_source || '-',
+              [row.olt_name || '-', row.olt_ip || '-'].join(' / '),
+              row.ip_pools.join('\n') || '-',
+              row.connection_status
+            ]),
+            styles: { fontSize: 8, cellPadding: 6 },
+            headStyles: { fillColor: [19, 34, 45] }
+          });
+          pdf.save('netking-ipam-explorer.pdf');
+        })
+        .catch((error) => setFlash(error.message, 'error'));
+    }
 
-      pdf.setFontSize(16);
-      pdf.text('Netking IPAM & Network Inventory Explorer', 40, 40);
-      pdf.setFontSize(10);
-      pdf.text(`Generated at ${new Date().toLocaleString()}`, 40, 58);
-
-      pdf.autoTable({
-        startY: 80,
-        head: [['Nama Perangkat', 'IP WireGuard', 'Auth', 'OLT Mapping', 'IP Pool Pelanggan', 'Status']],
-        body: state.filteredRows.map((row) => [
-          row.device_name,
-          row.wireguard_ip,
-          row.auth_source || '-',
-          [row.olt_name || '-', row.olt_ip || '-'].join(' / '),
-          row.ip_pools.join('\n') || '-',
-          row.connection_status
-        ]),
-        styles: {
-          fontSize: 8,
-          cellPadding: 6
-        },
-        headStyles: {
-          fillColor: [19, 34, 45]
-        }
+    async function fetchAllFilteredRows() {
+      const [sortBy, sortDir] = state.sort.split(':');
+      const params = new URLSearchParams({
+        page: '1',
+        per_page: '10000',
+        sort_by: sortBy,
+        sort_dir: sortDir
       });
-
-      pdf.save('netking-ipam-explorer.pdf');
+      if (state.query) params.set('q', state.query);
+      if (state.status && state.status !== 'all') params.set('status', state.status);
+      const response = await authFetch(`/api/explorer?${params.toString()}`);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Gagal mengambil data export');
+      return normalizeRows(data.items || []);
     }
 
     function mapExportRow(row) {
@@ -686,6 +716,7 @@
         'Nama Perangkat': row.device_name,
         'IP WireGuard': row.wireguard_ip,
         'Auth Source': row.auth_source || '-',
+        'Mapping Source': row.mapped_by || 'unmapped',
         'Nama OLT': row.olt_name || '-',
         'IP OLT': row.olt_ip || '-',
         'IP Pool Pelanggan': row.ip_pools.join(' | ') || '-',
@@ -704,10 +735,45 @@
     }
 
     elements.loginForm.addEventListener('submit', handleLogin);
+    elements.logoutButton.addEventListener('click', () => {
+      clearSession();
+      showLogin();
+      setFlash('Session dihapus. Login ulang untuk melanjutkan.', 'info');
+    });
+    elements.closeDetail.addEventListener('click', () => elements.detailDrawer.classList.add('translate-x-full'));
     elements.bookmarkForm.addEventListener('submit', handleBookmarkUpload);
     elements.scanForm.addEventListener('submit', handleScan);
     elements.bulkScanForm.addEventListener('submit', handleBulkScan);
-    elements.searchInput.addEventListener('input', applyFilter);
+    elements.loadBulkFile.addEventListener('click', handleLoadBulkFile);
+    elements.searchInput.addEventListener('input', handleSearchInput);
+    elements.statusFilter.addEventListener('change', () => {
+      state.status = elements.statusFilter.value;
+      state.currentPage = 1;
+      loadExplorer().catch((error) => setFlash(error.message, 'error'));
+    });
+    elements.sortSelect.addEventListener('change', () => {
+      state.sort = elements.sortSelect.value;
+      state.currentPage = 1;
+      loadExplorer().catch((error) => setFlash(error.message, 'error'));
+    });
+    elements.perPageSelect.addEventListener('change', () => {
+      state.perPage = Number(elements.perPageSelect.value);
+      state.currentPage = 1;
+      loadExplorer().catch((error) => setFlash(error.message, 'error'));
+    });
+    elements.prevPage.addEventListener('click', () => {
+      if (state.currentPage > 1) {
+        state.currentPage -= 1;
+        loadExplorer().catch((error) => setFlash(error.message, 'error'));
+      }
+    });
+    elements.nextPage.addEventListener('click', () => {
+      const totalPages = Math.max(1, Math.ceil(state.total / state.perPage));
+      if (state.currentPage < totalPages) {
+        state.currentPage += 1;
+        loadExplorer().catch((error) => setFlash(error.message, 'error'));
+      }
+    });
     elements.tableBody.addEventListener('click', handleTableClick);
     elements.exportCsv.addEventListener('click', exportToCsv);
     elements.exportExcel.addEventListener('click', exportToExcel);

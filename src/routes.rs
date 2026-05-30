@@ -1,4 +1,4 @@
-use std::net::IpAddr;
+use std::{cmp::Reverse, net::IpAddr};
 
 use axum::{
     extract::{Multipart, Path, Query, State},
@@ -7,6 +7,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use chrono::{DateTime, Utc};
 use futures_util::{stream, StreamExt};
 use serde::Deserialize;
 use sqlx::SqlitePool;
@@ -14,12 +15,13 @@ use sqlx::SqlitePool;
 use crate::{
     app_error::{AppError, AppResult},
     config::AppConfig,
+    crypto,
     mikrotik::MikrotikClient,
     models::{
         now_rfc3339, AuditLog, BookmarkOlt, BulkScanItemResult, BulkScanRequest, BulkScanResponse,
-        ExplorerRow, HealthResponse, ImportBookmarksResponse, LoginRequest, LoginResponse, OltOption,
-        RouterApiPool, RouterApiRoute, RouterRecord, ScanRouterRequest, ScanRouterResponse,
-        UpdateRouterMappingRequest,
+        ExplorerResponse, ExplorerRow, HealthResponse, ImportBookmarksResponse, IpPoolRecord, LoginRequest,
+        LoginResponse, OltOption, RouterApiPool, RouterApiRoute, RouterDetailResponse, RouterRecord,
+        RouterRouteRecord, ScanRouterRequest, ScanRouterResponse, UpdateRouterMappingRequest,
     },
     net::{parse_scope, ranges_to_scopes},
     parser::parse_bookmarks_html,
@@ -32,9 +34,14 @@ pub struct AppState {
     pub config: AppConfig,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone, Default)]
 struct ExplorerQuery {
     q: Option<String>,
+    page: Option<usize>,
+    per_page: Option<usize>,
+    status: Option<String>,
+    sort_by: Option<String>,
+    sort_dir: Option<String>,
 }
 
 pub fn build_router(state: AppState) -> Router {
@@ -46,6 +53,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/routers/bulk-scan", post(bulk_scan_routers))
         .route("/api/routers/:id/rescan", post(rescan_router))
         .route("/api/routers/:id/map-olt", post(update_router_mapping))
+        .route("/api/routers/:id/detail", get(get_router_detail))
         .route("/api/routers/export.csv", get(export_explorer_csv))
         .route("/api/olts", get(list_olts))
         .route("/api/explorer", get(list_explorer))
@@ -119,7 +127,6 @@ async fn import_bookmarks(
 
     let detail = format!("imported={imported}");
     append_audit_log(&state.pool, &actor, "import_bookmarks", "olt", None, Some(&detail)).await?;
-
     Ok(Json(ImportBookmarksResponse { imported }))
 }
 
@@ -129,7 +136,7 @@ async fn scan_router(
     Json(payload): Json<ScanRouterRequest>,
 ) -> AppResult<Json<ScanRouterResponse>> {
     let actor = require_auth(&state, &headers)?;
-    let result = scan_router_payload(&state, payload).await?;
+    let result = scan_router_payload(&state, payload, false).await?;
     append_audit_log(
         &state.pool,
         &actor,
@@ -160,7 +167,7 @@ async fn bulk_scan_routers(
         let state = state.clone();
         async move {
             let wireguard_ip = router.wireguard_ip.clone();
-            match scan_router_payload(&state, router).await {
+            match scan_router_payload(&state, router, false).await {
                 Ok(response) => BulkScanItemResult {
                     wireguard_ip,
                     success: true,
@@ -184,7 +191,6 @@ async fn bulk_scan_routers(
 
     let success_count = results.iter().filter(|item| item.success).count();
     let failure_count = results.len().saturating_sub(success_count);
-
     let detail = format!("success={success_count};failure={failure_count}");
     append_audit_log(&state.pool, &actor, "bulk_scan", "router", None, Some(&detail)).await?;
 
@@ -195,14 +201,91 @@ async fn bulk_scan_routers(
     }))
 }
 
+async fn rescan_router(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(router_id): Path<i64>,
+) -> AppResult<Json<ScanRouterResponse>> {
+    let actor = require_auth(&state, &headers)?;
+    let router = sqlx::query_as::<_, RouterRecord>("SELECT * FROM routers WHERE id = ?")
+        .bind(router_id)
+        .fetch_one(&state.pool)
+        .await?;
+
+    let payload = ScanRouterRequest {
+        wireguard_ip: router.wireguard_ip,
+        device_name: Some(router.name),
+        username: router.auth_username,
+        password: decrypt_router_password(&state.config, router.auth_password)?,
+    };
+
+    let response = scan_router_payload(&state, payload, true).await?;
+    append_audit_log(
+        &state.pool,
+        &actor,
+        "rescan_router",
+        "router",
+        Some(router_id.to_string()),
+        Some(&response.router.wireguard_ip),
+    )
+    .await?;
+
+    Ok(Json(response))
+}
+
+async fn update_router_mapping(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(router_id): Path<i64>,
+    Json(payload): Json<UpdateRouterMappingRequest>,
+) -> AppResult<Json<ExplorerRow>> {
+    let actor = require_auth(&state, &headers)?;
+
+    if let Some(olt_id) = payload.olt_id {
+        let exists: Option<(i64,)> = sqlx::query_as("SELECT id FROM olts WHERE id = ?")
+            .bind(olt_id)
+            .fetch_optional(&state.pool)
+            .await?;
+
+        if exists.is_none() {
+            return Err(AppError::BadRequest(format!("OLT id {olt_id} not found")));
+        }
+    }
+
+    sqlx::query(
+        r#"
+        UPDATE routers
+        SET mapped_olt_id = ?, mapping_source = ?, last_error = NULL, updated_at = ?
+        WHERE id = ?
+        "#,
+    )
+    .bind(payload.olt_id)
+    .bind(if payload.olt_id.is_some() { "manual" } else { "unmapped" })
+    .bind(now_rfc3339())
+    .bind(router_id)
+    .execute(&state.pool)
+    .await?;
+
+    append_audit_log(
+        &state.pool,
+        &actor,
+        "update_mapping",
+        "router",
+        Some(router_id.to_string()),
+        Some(if payload.olt_id.is_some() { "manual" } else { "unmapped" }),
+    )
+    .await?;
+
+    Ok(Json(fetch_explorer_row(&state.pool, router_id).await?))
+}
+
 async fn list_explorer(
     State(state): State<AppState>,
     headers: HeaderMap,
     Query(query): Query<ExplorerQuery>,
-) -> AppResult<Json<Vec<ExplorerRow>>> {
+) -> AppResult<Json<ExplorerResponse>> {
     let _actor = require_auth(&state, &headers)?;
-    let items = fetch_explorer_rows(&state.pool, query.q.as_deref()).await?;
-    Ok(Json(items))
+    Ok(Json(fetch_explorer_rows(&state.pool, &query).await?))
 }
 
 async fn export_explorer_csv(
@@ -211,7 +294,12 @@ async fn export_explorer_csv(
     Query(query): Query<ExplorerQuery>,
 ) -> AppResult<impl IntoResponse> {
     let actor = require_auth(&state, &headers)?;
-    let rows = fetch_explorer_rows(&state.pool, query.q.as_deref()).await?;
+    let export_query = ExplorerQuery {
+        page: Some(1),
+        per_page: Some(10_000),
+        ..query.clone()
+    };
+    let rows = fetch_explorer_rows(&state.pool, &export_query).await?.items;
 
     let mut csv = String::from(
         "device_name,wireguard_ip,auth_source,mapped_by,olt_name,olt_ip,ip_pools,connection_status,last_scanned_at,last_error\n",
@@ -222,7 +310,7 @@ async fn export_explorer_csv(
             csv_escape(&row.device_name),
             csv_escape(&row.wireguard_ip),
             csv_escape(&row.auth_source),
-            csv_escape(row.mapped_by.as_deref().unwrap_or("-")),
+            csv_escape(row.mapped_by.as_deref().unwrap_or("unmapped")),
             csv_escape(row.olt_name.as_deref().unwrap_or("-")),
             csv_escape(row.olt_ip.as_deref().unwrap_or("-")),
             csv_escape(&row.ip_pools.join(" | ")),
@@ -231,7 +319,6 @@ async fn export_explorer_csv(
             csv_escape(row.last_error.as_deref().unwrap_or("-")),
         ]
         .join(",");
-
         csv.push_str(&record);
         csv.push('\n');
     }
@@ -246,6 +333,29 @@ async fn export_explorer_csv(
     );
 
     Ok((StatusCode::OK, headers, csv))
+}
+
+async fn get_router_detail(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(router_id): Path<i64>,
+) -> AppResult<Json<RouterDetailResponse>> {
+    let _actor = require_auth(&state, &headers)?;
+    let router = fetch_explorer_row(&state.pool, router_id).await?;
+    let pools = sqlx::query_as::<_, IpPoolRecord>(
+        "SELECT * FROM ip_pools WHERE router_id = ? ORDER BY pool_name ASC",
+    )
+    .bind(router_id)
+    .fetch_all(&state.pool)
+    .await?;
+    let routes = sqlx::query_as::<_, RouterRouteRecord>(
+        "SELECT * FROM router_routes WHERE router_id = ? ORDER BY dst_address ASC, id ASC",
+    )
+    .bind(router_id)
+    .fetch_all(&state.pool)
+    .await?;
+
+    Ok(Json(RouterDetailResponse { router, pools, routes }))
 }
 
 async fn list_olts(
@@ -268,83 +378,6 @@ async fn list_olts(
     ))
 }
 
-async fn update_router_mapping(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path(router_id): Path<i64>,
-    Json(payload): Json<UpdateRouterMappingRequest>,
-) -> AppResult<Json<ExplorerRow>> {
-    let actor = require_auth(&state, &headers)?;
-    if let Some(olt_id) = payload.olt_id {
-        let exists: Option<(i64,)> = sqlx::query_as("SELECT id FROM olts WHERE id = ?")
-            .bind(olt_id)
-            .fetch_optional(&state.pool)
-            .await?;
-
-        if exists.is_none() {
-            return Err(AppError::BadRequest(format!("OLT id {olt_id} not found")));
-        }
-    }
-
-    sqlx::query(
-        r#"
-        UPDATE routers
-        SET mapped_olt_id = ?, mapping_source = ?, last_error = NULL, updated_at = ?
-        WHERE id = ?
-        "#,
-    )
-    .bind(payload.olt_id)
-    .bind(payload.olt_id.map(|_| "manual".to_string()))
-    .bind(now_rfc3339())
-    .bind(router_id)
-    .execute(&state.pool)
-    .await?;
-
-    append_audit_log(
-        &state.pool,
-        &actor,
-        "update_mapping",
-        "router",
-        Some(router_id.to_string()),
-        None,
-    )
-    .await?;
-
-    let row = fetch_explorer_row(&state.pool, router_id).await?;
-    Ok(Json(row))
-}
-
-async fn rescan_router(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path(router_id): Path<i64>,
-) -> AppResult<Json<ScanRouterResponse>> {
-    let actor = require_auth(&state, &headers)?;
-    let router = sqlx::query_as::<_, RouterRecord>("SELECT * FROM routers WHERE id = ?")
-        .bind(router_id)
-        .fetch_one(&state.pool)
-        .await?;
-
-    let payload = ScanRouterRequest {
-        wireguard_ip: router.wireguard_ip,
-        device_name: Some(router.name),
-        username: router.auth_username,
-        password: router.auth_password,
-    };
-
-    let response = scan_router_payload(&state, payload).await?;
-    append_audit_log(
-        &state.pool,
-        &actor,
-        "rescan_router",
-        "router",
-        Some(router_id.to_string()),
-        Some(&response.router.wireguard_ip),
-    )
-    .await?;
-    Ok(Json(response))
-}
-
 async fn list_audit_logs(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -358,11 +391,17 @@ async fn list_audit_logs(
     Ok(Json(rows))
 }
 
-async fn scan_router_payload(state: &AppState, payload: ScanRouterRequest) -> AppResult<ScanRouterResponse> {
+async fn scan_router_payload(
+    state: &AppState,
+    payload: ScanRouterRequest,
+    force: bool,
+) -> AppResult<ScanRouterResponse> {
     let wireguard_ip = payload.wireguard_ip.trim().to_string();
     if wireguard_ip.is_empty() {
         return Err(AppError::BadRequest("wireguard_ip is required".to_string()));
     }
+
+    enforce_scan_cooldown(&state.pool, &wireguard_ip, state.config.scan_cooldown_secs, force).await?;
 
     let device_name = payload
         .device_name
@@ -377,6 +416,7 @@ async fn scan_router_payload(state: &AppState, payload: ScanRouterRequest) -> Ap
 
     let router_id = upsert_router(
         &state.pool,
+        &state.config,
         &device_name,
         &wireguard_ip,
         payload.username.as_deref(),
@@ -410,7 +450,12 @@ async fn scan_router_payload(state: &AppState, payload: ScanRouterRequest) -> Ap
     };
 
     replace_ip_pools(&state.pool, router_id, &pools).await?;
+    replace_router_routes(&state.pool, router_id, &routes).await?;
     let mapping = find_matching_olt(&state.pool, &pools, &routes).await?;
+    let mapping_source = mapping
+        .as_ref()
+        .map(|(_, _, reason)| reason.clone())
+        .unwrap_or_else(|| "unmapped".to_string());
 
     sqlx::query(
         r#"
@@ -421,7 +466,7 @@ async fn scan_router_payload(state: &AppState, payload: ScanRouterRequest) -> Ap
     )
     .bind("connected")
     .bind(mapping.as_ref().map(|(id, _, _)| *id))
-    .bind(mapping.as_ref().map(|(_, _, reason)| reason.clone()))
+    .bind(mapping_source)
     .bind(now_rfc3339())
     .bind(now_rfc3339())
     .bind(router_id)
@@ -478,8 +523,48 @@ fn resolve_credentials(state: &AppState, payload: &ScanRouterRequest) -> AppResu
     Ok((username, password))
 }
 
-async fn fetch_explorer_rows(pool: &SqlitePool, keyword: Option<&str>) -> AppResult<Vec<ExplorerRow>> {
-    let rows = sqlx::query_as::<_, RouterRecord>("SELECT * FROM routers ORDER BY updated_at DESC, id DESC")
+fn decrypt_router_password(config: &AppConfig, value: Option<String>) -> AppResult<Option<String>> {
+    value.map(|ciphertext| crypto::decrypt(&config.crypto_key, &ciphertext))
+        .transpose()
+}
+
+async fn enforce_scan_cooldown(
+    pool: &SqlitePool,
+    wireguard_ip: &str,
+    cooldown_secs: u64,
+    force: bool,
+) -> AppResult<()> {
+    if force || cooldown_secs == 0 {
+        return Ok(());
+    }
+
+    let row: Option<(Option<String>,)> =
+        sqlx::query_as("SELECT last_scanned_at FROM routers WHERE wireguard_ip = ?")
+            .bind(wireguard_ip)
+            .fetch_optional(pool)
+            .await?;
+
+    let Some((Some(last_scanned_at),)) = row else {
+        return Ok(());
+    };
+
+    let last_scan = DateTime::parse_from_rfc3339(&last_scanned_at)
+        .map_err(|err| AppError::Internal(format!("invalid stored timestamp: {err}")))?
+        .with_timezone(&Utc);
+    let elapsed = Utc::now().signed_duration_since(last_scan).num_seconds();
+
+    if elapsed >= 0 && elapsed < cooldown_secs as i64 {
+        return Err(AppError::BadRequest(format!(
+            "scan cooldown active for {wireguard_ip}; wait {}s",
+            cooldown_secs as i64 - elapsed
+        )));
+    }
+
+    Ok(())
+}
+
+async fn fetch_explorer_rows(pool: &SqlitePool, query: &ExplorerQuery) -> AppResult<ExplorerResponse> {
+    let rows = sqlx::query_as::<_, RouterRecord>("SELECT * FROM routers")
         .fetch_all(pool)
         .await?;
 
@@ -488,7 +573,20 @@ async fn fetch_explorer_rows(pool: &SqlitePool, keyword: Option<&str>) -> AppRes
         items.push(fetch_explorer_row(pool, row.id).await?);
     }
 
-    if let Some(keyword) = keyword {
+    if let Some(status) = query.status.as_deref() {
+        let status = status.trim().to_lowercase();
+        if !status.is_empty() && status != "all" {
+            items.retain(|row| {
+                if status == "unmapped" {
+                    row.mapped_by.as_deref().unwrap_or("unmapped") == "unmapped"
+                } else {
+                    row.connection_status.to_lowercase() == status
+                }
+            });
+        }
+    }
+
+    if let Some(keyword) = query.q.as_deref() {
         let needle = keyword.trim().to_lowercase();
         if !needle.is_empty() {
             items.retain(|row| {
@@ -510,7 +608,39 @@ async fn fetch_explorer_rows(pool: &SqlitePool, keyword: Option<&str>) -> AppRes
         }
     }
 
-    Ok(items)
+    let sort_by = query.sort_by.as_deref().unwrap_or("last_scanned_at");
+    let sort_desc = query.sort_dir.as_deref().unwrap_or("desc").eq_ignore_ascii_case("desc");
+
+    match (sort_by, sort_desc) {
+        ("device_name", false) => items.sort_by(|a, b| a.device_name.cmp(&b.device_name)),
+        ("device_name", true) => items.sort_by_key(|row| Reverse(row.device_name.clone())),
+        ("wireguard_ip", false) => items.sort_by(|a, b| a.wireguard_ip.cmp(&b.wireguard_ip)),
+        ("wireguard_ip", true) => items.sort_by_key(|row| Reverse(row.wireguard_ip.clone())),
+        ("status", false) => items.sort_by(|a, b| a.connection_status.cmp(&b.connection_status)),
+        ("status", true) => items.sort_by_key(|row| Reverse(row.connection_status.clone())),
+        ("olt", false) => items.sort_by(|a, b| a.olt_name.cmp(&b.olt_name)),
+        ("olt", true) => items.sort_by_key(|row| Reverse(row.olt_name.clone())),
+        ("last_scanned_at", false) => items.sort_by(|a, b| a.last_scanned_at.cmp(&b.last_scanned_at)),
+        _ => items.sort_by_key(|row| Reverse(row.last_scanned_at.clone())),
+    }
+
+    let total = items.len();
+    let per_page = query.per_page.unwrap_or(20).clamp(1, 200);
+    let page = query.page.unwrap_or(1).max(1);
+    let start = (page - 1) * per_page;
+    let end = (start + per_page).min(total);
+    let paged_items = if start >= total {
+        Vec::new()
+    } else {
+        items[start..end].to_vec()
+    };
+
+    Ok(ExplorerResponse {
+        items: paged_items,
+        page,
+        per_page,
+        total,
+    })
 }
 
 async fn upsert_olts(pool: &SqlitePool, olts: &[BookmarkOlt]) -> AppResult<usize> {
@@ -539,6 +669,7 @@ async fn upsert_olts(pool: &SqlitePool, olts: &[BookmarkOlt]) -> AppResult<usize
 
 async fn upsert_router(
     pool: &SqlitePool,
+    config: &AppConfig,
     device_name: &str,
     wireguard_ip: &str,
     auth_username: Option<&str>,
@@ -546,6 +677,10 @@ async fn upsert_router(
     auth_source: &str,
 ) -> AppResult<i64> {
     let api_base_url = format!("https://{wireguard_ip}/rest");
+    let encrypted_password = auth_password
+        .map(|password| crypto::encrypt(&config.crypto_key, password))
+        .transpose()?;
+
     sqlx::query(
         r#"
         INSERT INTO routers (
@@ -555,8 +690,8 @@ async fn upsert_router(
         ON CONFLICT(wireguard_ip) DO UPDATE SET
             name = excluded.name,
             api_base_url = excluded.api_base_url,
-            auth_username = COALESCE(excluded.auth_username, routers.auth_username),
-            auth_password = COALESCE(excluded.auth_password, routers.auth_password),
+            auth_username = excluded.auth_username,
+            auth_password = excluded.auth_password,
             auth_source = excluded.auth_source,
             connection_status = excluded.connection_status,
             updated_at = excluded.updated_at
@@ -566,7 +701,7 @@ async fn upsert_router(
     .bind(wireguard_ip)
     .bind(api_base_url)
     .bind(auth_username)
-    .bind(auth_password)
+    .bind(encrypted_password)
     .bind(auth_source)
     .bind(now_rfc3339())
     .execute(pool)
@@ -612,6 +747,34 @@ async fn replace_ip_pools(pool: &SqlitePool, router_id: i64, pools: &[RouterApiP
     Ok(())
 }
 
+async fn replace_router_routes(
+    pool: &SqlitePool,
+    router_id: i64,
+    routes: &[RouterApiRoute],
+) -> AppResult<()> {
+    sqlx::query("DELETE FROM router_routes WHERE router_id = ?")
+        .bind(router_id)
+        .execute(pool)
+        .await?;
+
+    for route in routes {
+        sqlx::query(
+            r#"
+            INSERT INTO router_routes (router_id, dst_address, comment, updated_at)
+            VALUES (?, ?, ?, ?)
+            "#,
+        )
+        .bind(router_id)
+        .bind(&route.dst_address)
+        .bind(&route.comment)
+        .bind(now_rfc3339())
+        .execute(pool)
+        .await?;
+    }
+
+    Ok(())
+}
+
 async fn find_matching_olt(
     pool: &SqlitePool,
     pools: &[RouterApiPool],
@@ -632,18 +795,25 @@ async fn find_matching_olt(
         .flat_map(|item| ranges_to_scopes(&item.ranges))
         .collect();
 
-    for olt in olts {
+    for olt in &olts {
         let ip = match olt.ip_address.parse::<IpAddr>() {
             Ok(ip) => ip,
             Err(_) => continue,
         };
 
         if route_scopes.iter().any(|scope| scope.contains_ip(ip)) {
-            return Ok(Some((olt.id, olt.ip_address.clone(), "route.dst-address".to_string())));
+            return Ok(Some((olt.id, olt.ip_address.clone(), "auto_route".to_string())));
         }
+    }
+
+    for olt in olts {
+        let ip = match olt.ip_address.parse::<IpAddr>() {
+            Ok(ip) => ip,
+            Err(_) => continue,
+        };
 
         if pool_scopes.iter().any(|scope| scope.contains_ip(ip)) {
-            return Ok(Some((olt.id, olt.ip_address.clone(), "ip.pool.ranges".to_string())));
+            return Ok(Some((olt.id, olt.ip_address.clone(), "auto_pool".to_string())));
         }
     }
 
@@ -665,7 +835,7 @@ async fn fetch_explorer_row(pool: &SqlitePool, router_id: i64) -> AppResult<Expl
         None
     };
 
-    let pool_rows = sqlx::query_as::<_, crate::models::IpPoolRecord>(
+    let pool_rows = sqlx::query_as::<_, IpPoolRecord>(
         "SELECT * FROM ip_pools WHERE router_id = ? ORDER BY pool_name ASC",
     )
     .bind(router_id)
@@ -678,7 +848,7 @@ async fn fetch_explorer_row(pool: &SqlitePool, router_id: i64) -> AppResult<Expl
         wireguard_ip: router.wireguard_ip,
         auth_source: router.auth_source.clone(),
         olt_id: router.mapped_olt_id,
-        mapped_by: router.mapping_source.clone(),
+        mapped_by: Some(router.mapping_source.unwrap_or_else(|| "unmapped".to_string())),
         olt_name: olt.as_ref().map(|item| item.name.clone()),
         olt_ip: olt.as_ref().map(|item| item.ip_address.clone()),
         ip_pools: pool_rows
@@ -695,18 +865,18 @@ async fn mark_router_error(pool: &SqlitePool, router_id: i64, error_message: &st
     sqlx::query(
         r#"
         UPDATE routers
-        SET connection_status = ?, last_error = ?, last_scanned_at = ?, updated_at = ?
+        SET connection_status = ?, mapping_source = ?, last_error = ?, last_scanned_at = ?, updated_at = ?
         WHERE id = ?
         "#,
     )
     .bind("error")
+    .bind("unmapped")
     .bind(error_message)
     .bind(now_rfc3339())
     .bind(now_rfc3339())
     .bind(router_id)
     .execute(pool)
     .await?;
-
     Ok(())
 }
 
@@ -732,7 +902,6 @@ async fn append_audit_log(
     .bind(now_rfc3339())
     .execute(pool)
     .await?;
-
     Ok(())
 }
 

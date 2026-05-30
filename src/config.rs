@@ -10,11 +10,13 @@ pub struct AppConfig {
     pub admin_username: Option<String>,
     pub admin_password: Option<String>,
     pub session_token: Option<String>,
+    pub crypto_key: String,
     pub mikrotik_username: Option<String>,
     pub mikrotik_password: Option<String>,
     pub allow_insecure_tls: bool,
     pub request_timeout_secs: u64,
     pub max_scan_concurrency: usize,
+    pub scan_cooldown_secs: u64,
 }
 
 impl AppConfig {
@@ -34,6 +36,8 @@ impl AppConfig {
         let session_token = env::var("APP_SESSION_TOKEN").ok();
         let auth_enabled =
             admin_username.is_some() && admin_password.is_some() && session_token.is_some();
+        let crypto_key =
+            env::var("APP_CRYPTO_KEY").unwrap_or_else(|_| "replace-with-32-char-secret".to_string());
 
         Ok(Self {
             bind_addr,
@@ -43,6 +47,7 @@ impl AppConfig {
             admin_username,
             admin_password,
             session_token,
+            crypto_key,
             mikrotik_username: env::var("MIKROTIK_USERNAME").ok(),
             mikrotik_password: env::var("MIKROTIK_PASSWORD").ok(),
             allow_insecure_tls: env::var("MIKROTIK_ALLOW_INSECURE_TLS")
@@ -59,6 +64,12 @@ impl AppConfig {
                 .parse::<usize>()
                 .map_err(|err| {
                     AppError::BadRequest(format!("MAX_SCAN_CONCURRENCY invalid: {err}"))
+                })?,
+            scan_cooldown_secs: env::var("SCAN_COOLDOWN_SECS")
+                .unwrap_or_else(|_| "20".to_string())
+                .parse::<u64>()
+                .map_err(|err| {
+                    AppError::BadRequest(format!("SCAN_COOLDOWN_SECS invalid: {err}"))
                 })?,
         })
     }

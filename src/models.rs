@@ -31,6 +31,16 @@ pub struct RouterRecord {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct RouterRouteRecord {
+    pub id: i64,
+    pub router_id: i64,
+    pub dst_address: Option<String>,
+    pub comment: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct IpPoolRecord {
     pub id: i64,
     pub router_id: i64,
@@ -55,6 +65,14 @@ pub struct ExplorerRow {
     pub connection_status: String,
     pub last_scanned_at: Option<String>,
     pub last_error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ExplorerResponse {
+    pub items: Vec<ExplorerRow>,
+    pub page: usize,
+    pub per_page: usize,
+    pub total: usize,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -130,6 +148,13 @@ pub struct OltOption {
     pub id: i64,
     pub name: String,
     pub ip_address: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct RouterDetailResponse {
+    pub router: ExplorerRow,
+    pub pools: Vec<IpPoolRecord>,
+    pub routes: Vec<RouterRouteRecord>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

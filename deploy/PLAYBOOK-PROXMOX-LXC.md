@@ -48,9 +48,11 @@ Minimum yang wajib diisi:
 - `APP_ADMIN_USERNAME`
 - `APP_ADMIN_PASSWORD`
 - `APP_SESSION_TOKEN`
+- `APP_CRYPTO_KEY`
 - `MIKROTIK_USERNAME` dan `MIKROTIK_PASSWORD` jika ingin default global
 
 Kalau tiap router beda kredensial, `MIKROTIK_USERNAME` dan `MIKROTIK_PASSWORD` boleh dikosongkan.
+`SCAN_COOLDOWN_SECS` bisa dibiarkan default 20 detik untuk mencegah scan beruntun ke router yang sama.
 
 ## 5. Jalankan Aplikasi
 
@@ -106,6 +108,12 @@ Respons minimal yang diharapkan:
 1. Pilih OLT dari dropdown di kolom aksi
 2. Klik `Simpan Mapping`
 3. Pastikan label `manual` muncul pada kolom mapping
+
+### Detail Router
+
+1. Klik `Detail`
+2. Pastikan daftar `IP Pools` dan `Routes` tampil
+3. Cocokkan `mapping_source` apakah `auto_route`, `auto_pool`, `manual`, atau `unmapped`
 
 ### Bulk Scan
 
@@ -186,4 +194,3 @@ Staging dianggap layak lanjut bila:
 - Manual mapping bekerja
 - Export CSV/XLSX/PDF bekerja
 - Backup timer aktif
-

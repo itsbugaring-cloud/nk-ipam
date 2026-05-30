@@ -10,6 +10,9 @@ Dashboard ringan untuk sinkronisasi data OLT dari `bookmarks.html`, menarik IP p
 - Kredensial MikroTik bisa global via environment atau override per-router saat scan.
 - Auto-mapping OLT berdasarkan kecocokan `route dst-address` dan `ip pool ranges`.
 - Manual override mapping OLT dan rescan per-router dari dashboard.
+- Detail router sekarang menyimpan route aktif dan pool aktif hasil tarik terakhir.
+- Pagination, filter status, dan sorting explorer diproses server-side.
+- Password router per-perangkat dienkripsi sebelum disimpan ke SQLite.
 - Explorer table dengan live search dan export Excel/PDF/CSV.
 - Login ringan berbasis bearer token env untuk staging.
 - Audit log 100 aksi terakhir via API.
@@ -34,18 +37,21 @@ DATABASE_URL=sqlite://data/netking.db
 APP_ADMIN_USERNAME=admin
 APP_ADMIN_PASSWORD=change-me-admin
 APP_SESSION_TOKEN=replace-with-long-random-token
+APP_CRYPTO_KEY=replace-with-strong-crypto-passphrase
 MIKROTIK_USERNAME=admin
 MIKROTIK_PASSWORD=change-me
 MIKROTIK_ALLOW_INSECURE_TLS=true
 MIKROTIK_REQUEST_TIMEOUT_SECS=20
 MAX_SCAN_CONCURRENCY=8
+SCAN_COOLDOWN_SECS=20
 ```
 
 Catatan:
 
 - Jika `MIKROTIK_USERNAME` dan `MIKROTIK_PASSWORD` tidak diisi, user wajib mengisi kredensial per-router dari UI atau payload API.
 - Jika `APP_ADMIN_USERNAME`, `APP_ADMIN_PASSWORD`, dan `APP_SESSION_TOKEN` diisi, dashboard akan meminta login dan seluruh endpoint API selain health/login akan diproteksi bearer token.
-- Untuk staging awal, password router masih disimpan di SQLite bila diinput per-router. Ini pragmatis untuk operasional cepat, tetapi untuk produksi sebaiknya dipindah ke secret store atau dienkripsi.
+- `APP_CRYPTO_KEY` dipakai untuk mengenkripsi password router per-perangkat sebelum disimpan ke SQLite.
+- `SCAN_COOLDOWN_SECS` mencegah router yang sama di-scan berulang terlalu cepat dari UI/API biasa.
 
 ## Menjalankan Dengan Docker Compose
 
@@ -174,6 +180,7 @@ Backup harian otomatis tersedia lewat:
 ## Reverse Proxy
 
 Contoh konfigurasi Nginx untuk staging ada di `deploy/nginx/netking-ipam.conf`.
+Contoh HTTPS reverse proxy berbasis Caddy ada di `deploy/caddy/Caddyfile`.
 
 ## Backup SQLite
 
@@ -190,6 +197,12 @@ chmod +x deploy/scripts/backup-sqlite.sh
 ./deploy/scripts/backup-sqlite.sh /opt/netking-ipam/data/netking.db /opt/netking-ipam/data/backups
 ```
 
+Dengan retensi 14 hari:
+
+```bash
+./deploy/scripts/backup-sqlite.sh /opt/netking-ipam/data/netking.db /opt/netking-ipam/data/backups 14
+```
+
 Contoh env produksi awal tersedia di `.env.production.example`.
 
 ## Yang Masih Perlu Sebelum Production
@@ -198,3 +211,4 @@ Contoh env produksi awal tersedia di `.env.production.example`.
 - Metrics/alerting yang lebih formal.
 - CI build/test image.
 - Validasi respons real RouterOS dari seluruh varian router Anda.
+- Generate `Cargo.lock` dan verifikasi `cargo test` di host yang punya toolchain Rust.
