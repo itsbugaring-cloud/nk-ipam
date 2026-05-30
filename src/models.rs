@@ -23,6 +23,7 @@ pub struct RouterRecord {
     pub auth_source: String,
     pub connection_status: String,
     pub mapped_olt_id: Option<i64>,
+    pub mapping_source: Option<String>,
     pub last_error: Option<String>,
     pub last_scanned_at: Option<String>,
     pub created_at: String,
@@ -46,6 +47,8 @@ pub struct ExplorerRow {
     pub device_name: String,
     pub wireguard_ip: String,
     pub auth_source: String,
+    pub olt_id: Option<i64>,
+    pub mapped_by: Option<String>,
     pub olt_name: Option<String>,
     pub olt_ip: Option<String>,
     pub ip_pools: Vec<String>,
@@ -119,6 +122,18 @@ pub struct HealthResponse {
     pub status: String,
     pub database: String,
     pub default_credentials: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct OltOption {
+    pub id: i64,
+    pub name: String,
+    pub ip_address: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct UpdateRouterMappingRequest {
+    pub olt_id: Option<i64>,
 }
 
 pub fn now_rfc3339() -> String {

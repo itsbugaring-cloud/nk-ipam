@@ -89,10 +89,13 @@
       <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h2 class="text-xl font-semibold">Data Explorer</h2>
-          <p class="mt-2 text-sm text-stone-600">Live search akan mempengaruhi isi tabel sekaligus file Excel/PDF yang diekspor.</p>
+          <p class="mt-2 text-sm text-stone-600">Live search akan mempengaruhi isi tabel sekaligus file Excel/PDF/CSV yang diekspor.</p>
         </div>
         <div class="flex flex-col gap-3 sm:flex-row">
           <input id="searchInput" type="search" placeholder="Cari nama perangkat, IP WG, OLT, atau status..." class="w-full rounded-xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm sm:w-80" />
+          <button id="exportCsv" class="rounded-xl border border-stone-400 px-4 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-700 hover:text-white">
+            Export CSV
+          </button>
           <button id="exportExcel" class="rounded-xl border border-[var(--nk-olive)] px-4 py-3 text-sm font-semibold text-[var(--nk-olive)] transition hover:bg-[var(--nk-olive)] hover:text-white">
             Export to Excel
           </button>
@@ -115,6 +118,7 @@
                 <th class="px-4 py-4">OLT Mapping</th>
                 <th class="px-4 py-4">IP Pool Pelanggan</th>
                 <th class="px-4 py-4">Status Koneksi</th>
+                <th class="px-4 py-4">Aksi</th>
               </tr>
             </thead>
             <tbody id="tableBody" class="divide-y divide-stone-200 bg-white"></tbody>
@@ -127,7 +131,8 @@
   <script>
     const state = {
       rows: [],
-      filteredRows: []
+      filteredRows: [],
+      olts: []
     };
 
     const elements = {
@@ -146,6 +151,7 @@
       bulkScanButton: document.getElementById('bulkScanButton'),
       searchInput: document.getElementById('searchInput'),
       tableBody: document.getElementById('tableBody'),
+      exportCsv: document.getElementById('exportCsv'),
       exportExcel: document.getElementById('exportExcel'),
       exportPdf: document.getElementById('exportPdf')
     };
@@ -177,7 +183,7 @@
       if (!rows.length) {
         elements.tableBody.innerHTML = `
           <tr>
-            <td colspan="6" class="px-4 py-10 text-center text-sm text-stone-500">
+            <td colspan="7" class="px-4 py-10 text-center text-sm text-stone-500">
               Belum ada data. Unggah bookmark OLT lalu lakukan scan ke router MikroTik.
             </td>
           </tr>
@@ -198,6 +204,7 @@
           <td class="px-4 py-4 text-sm">
             <div>${escapeHtml(row.olt_name || '-')}</div>
             <div class="mt-1 font-mono text-xs text-stone-500">${escapeHtml(row.olt_ip || '-')}</div>
+            ${row.mapped_by ? `<div class="mt-2 text-[11px] uppercase tracking-[0.18em] text-stone-400">${escapeHtml(row.mapped_by)}</div>` : ''}
           </td>
           <td class="px-4 py-4 text-sm">
             ${row.ip_pools.length ? row.ip_pools.map((item) => `<div class="mb-2 rounded-xl bg-stone-100 px-3 py-2 font-mono text-xs">${escapeHtml(item)}</div>`).join('') : '<span class="text-stone-400">-</span>'}
@@ -208,8 +215,31 @@
             </span>
             ${row.last_error ? `<div class="mt-2 text-xs text-rose-600">${escapeHtml(row.last_error)}</div>` : ''}
           </td>
+          <td class="px-4 py-4 text-sm">
+            <div class="flex min-w-[220px] flex-col gap-2">
+              <button data-action="rescan" data-router-id="${row.router_id}" class="rounded-lg bg-stone-900 px-3 py-2 text-xs font-semibold text-white transition hover:opacity-90">
+                Rescan
+              </button>
+              <select data-action="mapping-select" data-router-id="${row.router_id}" class="rounded-lg border border-stone-300 bg-white px-3 py-2 text-xs">
+                ${renderOltOptions(row)}
+              </select>
+              <button data-action="map" data-router-id="${row.router_id}" class="rounded-lg border border-[var(--nk-accent)] px-3 py-2 text-xs font-semibold text-[var(--nk-accent)] transition hover:bg-[var(--nk-accent)] hover:text-white">
+                Simpan Mapping
+              </button>
+            </div>
+          </td>
         </tr>
       `).join('');
+    }
+
+    function renderOltOptions(row) {
+      const current = row.olt_name && row.olt_ip ? `${row.olt_name} (${row.olt_ip})` : 'Belum terhubung';
+      const base = [`<option value="">Lepas mapping (${escapeHtml(current)})</option>`];
+      const options = state.olts.map((olt) => {
+        const selected = String(olt.id) === String(row.olt_id || '') || olt.ip_address === row.olt_ip ? 'selected' : '';
+        return `<option value="${escapeHtml(String(olt.id))}" ${selected}>${escapeHtml(olt.name)} (${escapeHtml(olt.ip_address)})</option>`;
+      });
+      return base.concat(options).join('');
     }
 
     function applyFilter() {
@@ -238,6 +268,15 @@
       }
       state.rows = normalizeRows(data);
       applyFilter();
+    }
+
+    async function loadOlts() {
+      const response = await fetch('/api/olts');
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Gagal mengambil daftar OLT');
+      }
+      state.olts = Array.isArray(data) ? data : [];
     }
 
     async function checkHealth() {
@@ -276,6 +315,7 @@
           throw new Error(data.error || 'Import bookmark gagal');
         }
         setFlash(`Sinkronisasi selesai. ${data.imported} record OLT diproses.`, 'success');
+        await loadOlts();
         await loadExplorer();
       } catch (error) {
         setFlash(error.message, 'error');
@@ -373,6 +413,71 @@
       }
     }
 
+    async function handleTableClick(event) {
+      const button = event.target.closest('button[data-action]');
+      if (!button) {
+        return;
+      }
+
+      const routerId = button.dataset.routerId;
+      const action = button.dataset.action;
+
+      if (action === 'rescan') {
+        try {
+          button.disabled = true;
+          button.textContent = 'Rescan...';
+          setFlash(`Menjalankan rescan router #${routerId}...`, 'info');
+
+          const response = await fetch(`/api/routers/${routerId}/rescan`, { method: 'POST' });
+          const data = await response.json();
+          if (!response.ok) {
+            throw new Error(data.error || 'Rescan gagal');
+          }
+
+          setFlash(`Rescan berhasil untuk ${data.router.device_name}.`, 'success');
+          await loadExplorer();
+        } catch (error) {
+          setFlash(error.message, 'error');
+        } finally {
+          button.disabled = false;
+          button.textContent = 'Rescan';
+        }
+      }
+
+      if (action === 'map') {
+        const select = elements.tableBody.querySelector(`select[data-router-id="${routerId}"]`);
+        const oltId = select ? (select.value || null) : null;
+
+        try {
+          button.disabled = true;
+          button.textContent = 'Menyimpan...';
+          const response = await fetch(`/api/routers/${routerId}/map-olt`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ olt_id: oltId ? Number(oltId) : null })
+          });
+          const data = await response.json();
+          if (!response.ok) {
+            throw new Error(data.error || 'Update mapping gagal');
+          }
+
+          setFlash(`Mapping OLT untuk ${data.device_name} berhasil diperbarui.`, 'success');
+          await loadExplorer();
+        } catch (error) {
+          setFlash(error.message, 'error');
+        } finally {
+          button.disabled = false;
+          button.textContent = 'Simpan Mapping';
+        }
+      }
+    }
+
+    function exportToCsv() {
+      const keyword = encodeURIComponent(elements.searchInput.value.trim());
+      const url = keyword ? `/api/routers/export.csv?q=${keyword}` : '/api/routers/export.csv';
+      window.open(url, '_blank');
+    }
+
     function exportToExcel() {
       const worksheet = XLSX.utils.json_to_sheet(state.filteredRows.map(mapExportRow));
       const workbook = XLSX.utils.book_new();
@@ -438,11 +543,13 @@
     elements.scanForm.addEventListener('submit', handleScan);
     elements.bulkScanForm.addEventListener('submit', handleBulkScan);
     elements.searchInput.addEventListener('input', applyFilter);
+    elements.tableBody.addEventListener('click', handleTableClick);
+    elements.exportCsv.addEventListener('click', exportToCsv);
     elements.exportExcel.addEventListener('click', exportToExcel);
     elements.exportPdf.addEventListener('click', exportToPdf);
 
     checkHealth();
-    loadExplorer().catch((error) => setFlash(error.message, 'error'));
+    Promise.all([loadOlts(), loadExplorer()]).catch((error) => setFlash(error.message, 'error'));
   </script>
 </body>
 </html>

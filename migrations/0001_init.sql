@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS routers (
     auth_source TEXT NOT NULL DEFAULT 'env',
     connection_status TEXT NOT NULL DEFAULT 'unknown',
     mapped_olt_id INTEGER,
+    mapping_source TEXT,
     last_error TEXT,
     last_scanned_at TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,

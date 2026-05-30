@@ -9,8 +9,10 @@ Dashboard ringan untuk sinkronisasi data OLT dari `bookmarks.html`, menarik IP p
 - Bulk scan banyak router sekaligus.
 - Kredensial MikroTik bisa global via environment atau override per-router saat scan.
 - Auto-mapping OLT berdasarkan kecocokan `route dst-address` dan `ip pool ranges`.
-- Explorer table dengan live search dan export Excel/PDF.
+- Manual override mapping OLT dan rescan per-router dari dashboard.
+- Explorer table dengan live search dan export Excel/PDF/CSV.
 - Packaging Docker multi-stage dan contoh deploy LXC/Proxmox.
+- Workflow CI GitHub Actions untuk format, test, dan build.
 
 ## Arsitektur Ringkas
 
@@ -166,4 +168,3 @@ sqlite3 /opt/netking-ipam/data/netking.db ".backup /opt/netking-ipam/data/netkin
 - Audit log dan metrics.
 - CI build/test image.
 - Validasi respons real RouterOS dari seluruh varian router Anda.
-
