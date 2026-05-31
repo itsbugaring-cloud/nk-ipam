@@ -8,7 +8,7 @@ mod net;
 mod parser;
 mod routes;
 
-use std::path::Path;
+use std::{fs::OpenOptions, path::Path};
 
 use axum::Router;
 use tokio::net::TcpListener;
@@ -57,8 +57,15 @@ fn init_tracing() {
 
 fn ensure_sqlite_parent_dir(database_url: &str) -> AppResult<()> {
     if let Some(path) = database_url.strip_prefix("sqlite://") {
-        if let Some(parent) = Path::new(path).parent() {
+        let db_path = Path::new(path);
+        if let Some(parent) = db_path.parent() {
             std::fs::create_dir_all(parent)?;
+        }
+        if !path.ends_with(":memory:") {
+            OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(db_path)?;
         }
     }
     Ok(())
