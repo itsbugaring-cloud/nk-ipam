@@ -31,6 +31,13 @@ pub struct RouterRecord {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct AppSettingRecord {
+    pub key: String,
+    pub value: Option<String>,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct RouterRouteRecord {
     pub id: i64,
     pub router_id: i64,
@@ -172,6 +179,20 @@ pub struct LoginRequest {
 pub struct LoginResponse {
     pub token: String,
     pub username: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct MikrotikSettingsResponse {
+    pub username: Option<String>,
+    pub password_configured: bool,
+    pub source: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct UpdateMikrotikSettingsRequest {
+    pub username: Option<String>,
+    pub password: Option<String>,
+    pub clear_password: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]

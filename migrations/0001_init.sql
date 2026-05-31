@@ -56,6 +56,12 @@ CREATE TABLE IF NOT EXISTS audit_logs (
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS app_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE INDEX IF NOT EXISTS idx_routers_wireguard_ip ON routers(wireguard_ip);
 CREATE INDEX IF NOT EXISTS idx_routers_mapped_olt_id ON routers(mapped_olt_id);
 CREATE INDEX IF NOT EXISTS idx_ip_pools_router_id ON ip_pools(router_id);

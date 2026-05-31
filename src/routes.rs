@@ -20,8 +20,9 @@ use crate::{
     models::{
         now_rfc3339, AuditLog, BookmarkOlt, BulkScanItemResult, BulkScanRequest, BulkScanResponse,
         ExplorerResponse, ExplorerRow, HealthResponse, ImportBookmarksResponse, IpPoolRecord, LoginRequest,
-        LoginResponse, OltOption, RouterApiPool, RouterApiRoute, RouterDetailResponse, RouterRecord,
-        RouterRouteRecord, ScanRouterRequest, ScanRouterResponse, UpdateRouterMappingRequest,
+        LoginResponse, MikrotikSettingsResponse, OltOption, RouterApiPool, RouterApiRoute,
+        RouterDetailResponse, RouterRecord, RouterRouteRecord, ScanRouterRequest, ScanRouterResponse,
+        UpdateMikrotikSettingsRequest, UpdateRouterMappingRequest,
     },
     net::{parse_scope, ranges_to_scopes},
     parser::parse_bookmarks_html,
@@ -44,10 +45,17 @@ struct ExplorerQuery {
     sort_dir: Option<String>,
 }
 
+struct ResolvedCredentials {
+    username: String,
+    password: String,
+    source: String,
+}
+
 pub fn build_router(state: AppState) -> Router {
     Router::new()
         .route("/api/health", get(health))
         .route("/api/auth/login", post(login))
+        .route("/api/settings/mikrotik", get(get_mikrotik_settings).post(update_mikrotik_settings))
         .route("/api/bookmarks/import", post(import_bookmarks))
         .route("/api/routers/scan", post(scan_router))
         .route("/api/routers/bulk-scan", post(bulk_scan_routers))
@@ -72,11 +80,12 @@ async fn health(State(state): State<AppState>) -> AppResult<Json<HealthResponse>
 
     let status = if database == "ok" { "ok" } else { "degraded" }.to_string();
 
+    let (username, password, _) = load_default_mikrotik_credentials(&state.pool, &state.config).await?;
+
     Ok(Json(HealthResponse {
         status,
         database: database.to_string(),
-        default_credentials: state.config.mikrotik_username.is_some()
-            && state.config.mikrotik_password.is_some(),
+        default_credentials: username.is_some() && password.is_some(),
         auth_enabled: state.config.auth_enabled,
     }))
 }
@@ -105,6 +114,58 @@ async fn login(
         token,
         username: payload.username,
     }))
+}
+
+async fn get_mikrotik_settings(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> AppResult<Json<MikrotikSettingsResponse>> {
+    let _actor = require_auth(&state, &headers)?;
+    let (username, password, source) = load_default_mikrotik_credentials(&state.pool, &state.config).await?;
+
+    Ok(Json(MikrotikSettingsResponse {
+        username,
+        password_configured: password.is_some(),
+        source,
+    }))
+}
+
+async fn update_mikrotik_settings(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<UpdateMikrotikSettingsRequest>,
+) -> AppResult<Json<MikrotikSettingsResponse>> {
+    let actor = require_auth(&state, &headers)?;
+    let username = payload
+        .username
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    let password = payload
+        .password
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+
+    upsert_setting(&state.pool, "mikrotik.default_username", username.as_deref()).await?;
+
+    if payload.clear_password.unwrap_or(false) {
+        upsert_setting(&state.pool, "mikrotik.default_password", None).await?;
+    } else if let Some(password) = password.as_deref() {
+        let encrypted = crypto::encrypt(&state.config.crypto_key, password)?;
+        upsert_setting(&state.pool, "mikrotik.default_password", Some(&encrypted)).await?;
+    }
+
+    let response = get_mikrotik_settings(State(state.clone()), headers).await?;
+    append_audit_log(
+        &state.pool,
+        &actor,
+        "update_mikrotik_settings",
+        "setting",
+        None,
+        Some("default credentials updated"),
+    )
+    .await?;
+
+    Ok(response)
 }
 
 async fn import_bookmarks(
@@ -407,12 +468,8 @@ async fn scan_router_payload(
         .device_name
         .clone()
         .unwrap_or_else(|| format!("Router-{wireguard_ip}"));
-    let credentials = resolve_credentials(state, &payload)?;
-    let auth_source = if payload.username.as_deref().is_some() && payload.password.as_deref().is_some() {
-        "router"
-    } else {
-        "env"
-    };
+    let credentials = resolve_credentials(state, &payload).await?;
+    let auth_source = credentials.source.as_str();
 
     let router_id = upsert_router(
         &state.pool,
@@ -427,7 +484,7 @@ async fn scan_router_payload(
 
     let pools = match state
         .mikrotik
-        .fetch_pools(&wireguard_ip, &credentials.0, &credentials.1)
+        .fetch_pools(&wireguard_ip, &credentials.username, &credentials.password)
         .await
     {
         Ok(pools) => pools,
@@ -439,7 +496,7 @@ async fn scan_router_payload(
 
     let routes = match state
         .mikrotik
-        .fetch_routes(&wireguard_ip, &credentials.0, &credentials.1)
+        .fetch_routes(&wireguard_ip, &credentials.username, &credentials.password)
         .await
     {
         Ok(routes) => routes,
@@ -508,19 +565,33 @@ fn require_auth(state: &AppState, headers: &HeaderMap) -> AppResult<String> {
         .unwrap_or_else(|| "admin".to_string()))
 }
 
-fn resolve_credentials(state: &AppState, payload: &ScanRouterRequest) -> AppResult<(String, String)> {
-    let username = payload
-        .username
-        .clone()
-        .or_else(|| state.config.mikrotik_username.clone())
-        .ok_or_else(|| AppError::BadRequest("username is required either in request or env".to_string()))?;
-    let password = payload
-        .password
-        .clone()
-        .or_else(|| state.config.mikrotik_password.clone())
-        .ok_or_else(|| AppError::BadRequest("password is required either in request or env".to_string()))?;
+async fn resolve_credentials(
+    state: &AppState,
+    payload: &ScanRouterRequest,
+) -> AppResult<ResolvedCredentials> {
+    if let (Some(username), Some(password)) = (
+        payload.username.clone().filter(|value| !value.trim().is_empty()),
+        payload.password.clone().filter(|value| !value.trim().is_empty()),
+    ) {
+        return Ok(ResolvedCredentials {
+            username,
+            password,
+            source: "router".to_string(),
+        });
+    }
 
-    Ok((username, password))
+    let (default_username, default_password, source) =
+        load_default_mikrotik_credentials(&state.pool, &state.config).await?;
+    let username = default_username
+        .ok_or_else(|| AppError::BadRequest("default MikroTik username is not configured".to_string()))?;
+    let password = default_password
+        .ok_or_else(|| AppError::BadRequest("default MikroTik password is not configured".to_string()))?;
+
+    Ok(ResolvedCredentials {
+        username,
+        password,
+        source,
+    })
 }
 
 fn decrypt_router_password(config: &AppConfig, value: Option<String>) -> AppResult<Option<String>> {
@@ -902,6 +973,69 @@ async fn append_audit_log(
     .bind(now_rfc3339())
     .execute(pool)
     .await?;
+    Ok(())
+}
+
+async fn load_default_mikrotik_credentials(
+    pool: &SqlitePool,
+    config: &AppConfig,
+) -> AppResult<(Option<String>, Option<String>, String)> {
+    let db_username = load_setting(pool, "mikrotik.default_username").await?;
+    let db_password_encrypted = load_setting(pool, "mikrotik.default_password").await?;
+    let db_password = match db_password_encrypted {
+        Some(value) => Some(crypto::decrypt(&config.crypto_key, &value)?),
+        None => None,
+    };
+
+    if db_username.is_some() || db_password.is_some() {
+        return Ok((db_username, db_password, "database".to_string()));
+    }
+
+    if config.mikrotik_username.is_some() || config.mikrotik_password.is_some() {
+        return Ok((
+            config.mikrotik_username.clone(),
+            config.mikrotik_password.clone(),
+            "env".to_string(),
+        ));
+    }
+
+    Ok((None, None, "none".to_string()))
+}
+
+async fn load_setting(pool: &SqlitePool, key: &str) -> AppResult<Option<String>> {
+    let row: Option<(Option<String>,)> = sqlx::query_as("SELECT value FROM app_settings WHERE key = ?")
+        .bind(key)
+        .fetch_optional(pool)
+        .await?;
+    Ok(row.and_then(|(value,)| value))
+}
+
+async fn upsert_setting(pool: &SqlitePool, key: &str, value: Option<&str>) -> AppResult<()> {
+    match value {
+        Some(value) => {
+            sqlx::query(
+                r#"
+                INSERT INTO app_settings (key, value, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(key) DO UPDATE SET
+                    value = excluded.value,
+                    updated_at = excluded.updated_at
+                "#,
+            )
+            .bind(key)
+            .bind(value)
+            .bind(now_rfc3339())
+            .execute(pool)
+            .await?;
+        }
+        None => {
+            sqlx::query("DELETE FROM app_settings WHERE key = ?")
+                .bind(key)
+                .execute(pool)
+                .await?;
+        }
+    }
+
     Ok(())
 }
 
