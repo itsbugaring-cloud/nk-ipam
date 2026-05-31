@@ -33,7 +33,7 @@ Salin `.env.example` menjadi `.env`.
 ```env
 APP_HOST=0.0.0.0
 APP_PORT=8080
-DATABASE_URL=sqlite://data/netking.db
+DATABASE_URL=sqlite:///app/data/netking.db
 APP_ADMIN_USERNAME=admin
 APP_ADMIN_PASSWORD=change-me-admin
 APP_SESSION_TOKEN=replace-with-long-random-token

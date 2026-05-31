@@ -9,7 +9,7 @@ services:
     environment:
       APP_HOST: ${APP_HOST:-0.0.0.0}
       APP_PORT: ${APP_PORT:-8080}
-      DATABASE_URL: ${DATABASE_URL:-sqlite://data/netking.db}
+      DATABASE_URL: ${DATABASE_URL:-sqlite:///app/data/netking.db}
       APP_ADMIN_USERNAME: ${APP_ADMIN_USERNAME}
       APP_ADMIN_PASSWORD: ${APP_ADMIN_PASSWORD}
       APP_SESSION_TOKEN: ${APP_SESSION_TOKEN}

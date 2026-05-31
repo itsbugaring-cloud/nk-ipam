@@ -42,7 +42,7 @@ impl AppConfig {
         Ok(Self {
             bind_addr,
             database_url: env::var("DATABASE_URL")
-                .unwrap_or_else(|_| "sqlite://data/netking.db".to_string()),
+                .unwrap_or_else(|_| "sqlite:///app/data/netking.db".to_string()),
             auth_enabled,
             admin_username,
             admin_password,

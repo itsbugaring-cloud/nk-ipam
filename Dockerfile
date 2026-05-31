@@ -21,7 +21,7 @@ COPY --from=builder /app/migrations /app/migrations
 
 ENV APP_HOST=0.0.0.0
 ENV APP_PORT=8080
-ENV DATABASE_URL=sqlite://data/netking.db
+ENV DATABASE_URL=sqlite:///app/data/netking.db
 
 EXPOSE 8080
 
