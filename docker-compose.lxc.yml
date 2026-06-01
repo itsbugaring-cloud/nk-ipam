@@ -1,0 +1,4 @@
+services:
+  netking-ipam:
+    network_mode: host
+    ports: []

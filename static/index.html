@@ -202,8 +202,8 @@
       filteredRows: [],
       olts: [],
       authEnabled: false,
-      token: localStorage.getItem('netking_ipam_token') || '',
-      username: localStorage.getItem('netking_ipam_user') || '',
+      token: sessionStorage.getItem('netking_ipam_token') || '',
+      username: sessionStorage.getItem('netking_ipam_user') || '',
       currentPage: 1,
       perPage: 20,
       total: 0,
@@ -282,9 +282,15 @@
     function clearSession() {
       state.token = '';
       state.username = '';
-      localStorage.removeItem('netking_ipam_token');
-      localStorage.removeItem('netking_ipam_user');
+      state.bootstrapped = false;
+      sessionStorage.removeItem('netking_ipam_token');
+      sessionStorage.removeItem('netking_ipam_user');
       elements.logoutButton.classList.add('hidden');
+    }
+
+    async function bootstrapApp() {
+      await Promise.all([loadOlts(), loadExplorer(), loadAuditLogs(), loadMikrotikSettings()]);
+      state.bootstrapped = true;
     }
 
     function setFlash(message, type = 'info') {
@@ -485,8 +491,7 @@
         } else {
           hideLogin();
           if (!state.bootstrapped) {
-            state.bootstrapped = true;
-            await Promise.all([loadOlts(), loadExplorer(), loadAuditLogs(), loadMikrotikSettings()]);
+            await bootstrapApp();
           }
         }
       } catch (error) {
@@ -513,13 +518,13 @@
         if (!response.ok) throw new Error(data.error || 'Login gagal');
         state.token = data.token;
         state.username = data.username;
-        localStorage.setItem('netking_ipam_token', data.token);
-        localStorage.setItem('netking_ipam_user', data.username);
-        state.bootstrapped = true;
+        sessionStorage.setItem('netking_ipam_token', data.token);
+        sessionStorage.setItem('netking_ipam_user', data.username);
         hideLogin();
         setFlash(`Login berhasil sebagai ${data.username}.`, 'success');
-        await Promise.all([loadOlts(), loadExplorer(), loadAuditLogs(), loadMikrotikSettings()]);
+        await bootstrapApp();
       } catch (error) {
+        state.bootstrapped = false;
         setFlash(error.message, 'error');
       } finally {
         elements.loginButton.disabled = false;

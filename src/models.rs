@@ -179,6 +179,7 @@ pub struct LoginRequest {
 pub struct LoginResponse {
     pub token: String,
     pub username: String,
+    pub expires_at: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -193,6 +194,7 @@ pub struct UpdateMikrotikSettingsRequest {
     pub username: Option<String>,
     pub password: Option<String>,
     pub clear_password: Option<bool>,
+    pub clear_username: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]

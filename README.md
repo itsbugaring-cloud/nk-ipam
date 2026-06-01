@@ -14,7 +14,7 @@ Dashboard ringan untuk sinkronisasi data OLT dari `bookmarks.html`, menarik IP p
 - Pagination, filter status, dan sorting explorer diproses server-side.
 - Password router per-perangkat dienkripsi sebelum disimpan ke SQLite.
 - Explorer table dengan live search dan export Excel/PDF/CSV.
-- Login ringan berbasis bearer token env untuk staging.
+- Login berbasis signed session token dengan masa berlaku terkontrol.
 - Audit log 100 aksi terakhir via API.
 - Packaging Docker multi-stage dan contoh deploy LXC/Proxmox.
 - Workflow CI GitHub Actions untuk format, test, dan build.
@@ -37,6 +37,7 @@ DATABASE_URL=sqlite:///app/data/netking.db
 APP_ADMIN_USERNAME=admin
 APP_ADMIN_PASSWORD=change-me-admin
 APP_SESSION_TOKEN=replace-with-long-random-token
+APP_SESSION_TTL_SECS=43200
 APP_CRYPTO_KEY=replace-with-strong-crypto-passphrase
 MIKROTIK_USERNAME=admin
 MIKROTIK_PASSWORD=change-me
@@ -49,7 +50,8 @@ SCAN_COOLDOWN_SECS=20
 Catatan:
 
 - Jika `MIKROTIK_USERNAME` dan `MIKROTIK_PASSWORD` tidak diisi, user wajib mengisi kredensial per-router dari UI atau payload API.
-- Jika `APP_ADMIN_USERNAME`, `APP_ADMIN_PASSWORD`, dan `APP_SESSION_TOKEN` diisi, dashboard akan meminta login dan seluruh endpoint API selain health/login akan diproteksi bearer token.
+- Jika `APP_ADMIN_USERNAME`, `APP_ADMIN_PASSWORD`, dan `APP_SESSION_TOKEN` diisi, dashboard akan meminta login dan seluruh endpoint API selain health/login akan diproteksi signed session token.
+- `APP_SESSION_TTL_SECS` mengatur masa berlaku token login dalam detik.
 - `APP_CRYPTO_KEY` dipakai untuk mengenkripsi password router per-perangkat sebelum disimpan ke SQLite.
 - `SCAN_COOLDOWN_SECS` mencegah router yang sama di-scan berulang terlalu cepat dari UI/API biasa.
 
@@ -60,6 +62,12 @@ cp .env.example .env
 mkdir -p data
 docker compose up --build -d
 docker compose logs -f
+```
+
+Untuk Proxmox LXC yang butuh host networking:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.lxc.yml up --build -d
 ```
 
 Setelah hidup:
@@ -165,7 +173,7 @@ docker run -d \
   --restart unless-stopped \
   --env-file /opt/netking-ipam/.env \
   -v /opt/netking-ipam/data:/app/data \
-  -p 8080:8080 \
+  --network host \
   netking-ipam:latest
 ```
 

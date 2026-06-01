@@ -17,6 +17,7 @@ pub struct AppConfig {
     pub request_timeout_secs: u64,
     pub max_scan_concurrency: usize,
     pub scan_cooldown_secs: u64,
+    pub session_ttl_secs: u64,
 }
 
 impl AppConfig {
@@ -70,6 +71,12 @@ impl AppConfig {
                 .parse::<u64>()
                 .map_err(|err| {
                     AppError::BadRequest(format!("SCAN_COOLDOWN_SECS invalid: {err}"))
+                })?,
+            session_ttl_secs: env::var("APP_SESSION_TTL_SECS")
+                .unwrap_or_else(|_| "43200".to_string())
+                .parse::<u64>()
+                .map_err(|err| {
+                    AppError::BadRequest(format!("APP_SESSION_TTL_SECS invalid: {err}"))
                 })?,
         })
     }

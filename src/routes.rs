@@ -7,10 +7,13 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use base64::Engine;
 use chrono::{DateTime, Utc};
 use futures_util::{stream, StreamExt};
+use hmac::{Hmac, Mac};
 use serde::Deserialize;
 use sqlx::SqlitePool;
+use sha2::Sha256;
 
 use crate::{
     app_error::{AppError, AppResult},
@@ -27,6 +30,8 @@ use crate::{
     net::{parse_scope, ranges_to_scopes},
     parser::parse_bookmarks_html,
 };
+
+type HmacSha256 = Hmac<Sha256>;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -107,12 +112,14 @@ async fn login(
         return Err(AppError::Unauthorized);
     }
 
-    let token = state.config.session_token.clone().unwrap_or_default();
+    let expires_at = Utc::now() + chrono::Duration::seconds(state.config.session_ttl_secs as i64);
+    let token = issue_session_token(&state.config, &payload.username, expires_at)?;
     append_audit_log(&state.pool, &payload.username, "login", "session", None, Some("success")).await?;
 
     Ok(Json(LoginResponse {
         token,
         username: payload.username,
+        expires_at: expires_at.to_rfc3339(),
     }))
 }
 
@@ -136,6 +143,7 @@ async fn update_mikrotik_settings(
     Json(payload): Json<UpdateMikrotikSettingsRequest>,
 ) -> AppResult<Json<MikrotikSettingsResponse>> {
     let actor = require_auth(&state, &headers)?;
+    let existing = load_default_mikrotik_credentials(&state.pool, &state.config).await?;
     let username = payload
         .username
         .map(|value| value.trim().to_string())
@@ -145,7 +153,12 @@ async fn update_mikrotik_settings(
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty());
 
-    upsert_setting(&state.pool, "mikrotik.default_username", username.as_deref()).await?;
+    let final_username = if payload.clear_username.unwrap_or(false) {
+        None
+    } else {
+        username.or(existing.0)
+    };
+    upsert_setting(&state.pool, "mikrotik.default_username", final_username.as_deref()).await?;
 
     if payload.clear_password.unwrap_or(false) {
         upsert_setting(&state.pool, "mikrotik.default_password", None).await?;
@@ -553,16 +566,7 @@ fn require_auth(state: &AppState, headers: &HeaderMap) -> AppResult<String> {
         return Err(AppError::Unauthorized);
     };
 
-    let expected = state.config.session_token.as_deref().ok_or(AppError::Unauthorized)?;
-    if token != expected {
-        return Err(AppError::Unauthorized);
-    }
-
-    Ok(state
-        .config
-        .admin_username
-        .clone()
-        .unwrap_or_else(|| "admin".to_string()))
+    validate_session_token(&state.config, token)
 }
 
 async fn resolve_credentials(
@@ -639,9 +643,47 @@ async fn fetch_explorer_rows(pool: &SqlitePool, query: &ExplorerQuery) -> AppRes
         .fetch_all(pool)
         .await?;
 
+    let pool_rows = sqlx::query_as::<_, IpPoolRecord>(
+        "SELECT * FROM ip_pools ORDER BY router_id ASC, pool_name ASC",
+    )
+    .fetch_all(pool)
+    .await?;
+    let olt_rows = sqlx::query_as::<_, crate::models::Olt>("SELECT * FROM olts")
+        .fetch_all(pool)
+        .await?;
+
+    let mut pools_by_router = std::collections::HashMap::<i64, Vec<String>>::new();
+    for pool_row in pool_rows {
+        pools_by_router
+            .entry(pool_row.router_id)
+            .or_default()
+            .push(format!("{} ({})", pool_row.pool_name, pool_row.raw_ranges));
+    }
+
+    let olt_by_id = olt_rows
+        .into_iter()
+        .map(|olt| (olt.id, olt))
+        .collect::<std::collections::HashMap<_, _>>();
+
     let mut items = Vec::with_capacity(rows.len());
     for row in rows {
-        items.push(fetch_explorer_row(pool, row.id).await?);
+        let olt = row
+            .mapped_olt_id
+            .and_then(|olt_id| olt_by_id.get(&olt_id));
+        items.push(ExplorerRow {
+            router_id: row.id,
+            device_name: row.name,
+            wireguard_ip: row.wireguard_ip,
+            auth_source: row.auth_source,
+            olt_id: row.mapped_olt_id,
+            mapped_by: Some(row.mapping_source.unwrap_or_else(|| "unmapped".to_string())),
+            olt_name: olt.map(|item| item.name.clone()),
+            olt_ip: olt.map(|item| item.ip_address.clone()),
+            ip_pools: pools_by_router.remove(&row.id).unwrap_or_default(),
+            connection_status: row.connection_status,
+            last_scanned_at: row.last_scanned_at,
+            last_error: row.last_error,
+        });
     }
 
     if let Some(status) = query.status.as_deref() {
@@ -987,15 +1029,27 @@ async fn load_default_mikrotik_credentials(
         None => None,
     };
 
-    if db_username.is_some() || db_password.is_some() {
+    if db_username.is_some() && db_password.is_some() {
         return Ok((db_username, db_password, "database".to_string()));
+    }
+
+    if config.mikrotik_username.is_some() && config.mikrotik_password.is_some() {
+        return Ok((
+            config.mikrotik_username.clone(),
+            config.mikrotik_password.clone(),
+            "env".to_string(),
+        ));
+    }
+
+    if db_username.is_some() || db_password.is_some() {
+        return Ok((db_username, db_password, "database_partial".to_string()));
     }
 
     if config.mikrotik_username.is_some() || config.mikrotik_password.is_some() {
         return Ok((
             config.mikrotik_username.clone(),
             config.mikrotik_password.clone(),
-            "env".to_string(),
+            "env_partial".to_string(),
         ));
     }
 
@@ -1042,4 +1096,59 @@ async fn upsert_setting(pool: &SqlitePool, key: &str, value: Option<&str>) -> Ap
 fn csv_escape(input: &str) -> String {
     let escaped = input.replace('"', "\"\"");
     format!("\"{escaped}\"")
+}
+
+fn issue_session_token(config: &AppConfig, username: &str, expires_at: DateTime<Utc>) -> AppResult<String> {
+    let secret = config.session_token.as_deref().ok_or(AppError::Unauthorized)?;
+    let issued_at = Utc::now().timestamp_millis();
+    let payload = format!("{username}|{}|{issued_at}", expires_at.timestamp());
+    let signature = sign_token(secret, &payload)?;
+    Ok(format!(
+        "{}.{}",
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(payload),
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(signature)
+    ))
+}
+
+fn validate_session_token(config: &AppConfig, token: &str) -> AppResult<String> {
+    let secret = config.session_token.as_deref().ok_or(AppError::Unauthorized)?;
+    let (payload_b64, signature_b64) = token.split_once('.').ok_or(AppError::Unauthorized)?;
+    let payload_bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(payload_b64)
+        .map_err(|_| AppError::Unauthorized)?;
+    let signature = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(signature_b64)
+        .map_err(|_| AppError::Unauthorized)?;
+    let payload = String::from_utf8(payload_bytes).map_err(|_| AppError::Unauthorized)?;
+
+    verify_token_signature(secret, &payload, &signature)?;
+
+    let mut parts = payload.split('|');
+    let username = parts.next().ok_or(AppError::Unauthorized)?;
+    let expires_at = parts
+        .next()
+        .ok_or(AppError::Unauthorized)?
+        .parse::<i64>()
+        .map_err(|_| AppError::Unauthorized)?;
+    let _issued_at = parts.next().ok_or(AppError::Unauthorized)?;
+
+    if Utc::now().timestamp() > expires_at {
+        return Err(AppError::Unauthorized);
+    }
+
+    Ok(username.to_string())
+}
+
+fn sign_token(secret: &str, payload: &str) -> AppResult<Vec<u8>> {
+    let mut mac =
+        HmacSha256::new_from_slice(secret.as_bytes()).map_err(|err| AppError::Internal(err.to_string()))?;
+    mac.update(payload.as_bytes());
+    Ok(mac.finalize().into_bytes().to_vec())
+}
+
+fn verify_token_signature(secret: &str, payload: &str, signature: &[u8]) -> AppResult<()> {
+    let mut mac =
+        HmacSha256::new_from_slice(secret.as_bytes()).map_err(|err| AppError::Internal(err.to_string()))?;
+    mac.update(payload.as_bytes());
+    mac.verify_slice(signature).map_err(|_| AppError::Unauthorized)
 }
