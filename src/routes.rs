@@ -789,7 +789,8 @@ async fn upsert_router(
     auth_password: Option<&str>,
     auth_source: &str,
 ) -> AppResult<i64> {
-    let api_base_url = format!("https://{wireguard_ip}/rest");
+    let scheme = if config.mikrotik_use_https { "https" } else { "http" };
+    let api_base_url = format!("{scheme}://{wireguard_ip}/rest");
     let encrypted_password = auth_password
         .map(|password| crypto::encrypt(&config.crypto_key, password))
         .transpose()?;

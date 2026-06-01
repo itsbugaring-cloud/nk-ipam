@@ -11,6 +11,7 @@ use crate::{
 #[derive(Clone)]
 pub struct MikrotikClient {
     http: Client,
+    use_https: bool,
 }
 
 impl MikrotikClient {
@@ -20,7 +21,14 @@ impl MikrotikClient {
             .timeout(Duration::from_secs(config.request_timeout_secs))
             .build()?;
 
-        Ok(Self { http })
+        Ok(Self {
+            http,
+            use_https: config.mikrotik_use_https,
+        })
+    }
+
+    fn scheme(&self) -> &str {
+        if self.use_https { "https" } else { "http" }
     }
 
     pub async fn fetch_pools(
@@ -29,7 +37,8 @@ impl MikrotikClient {
         username: &str,
         password: &str,
     ) -> AppResult<Vec<RouterApiPool>> {
-        self.get_json(&format!("https://{wireguard_ip}/rest/ip/pool"), username, password)
+        let scheme = self.scheme();
+        self.get_json(&format!("{scheme}://{wireguard_ip}/rest/ip/pool"), username, password)
             .await
     }
 
@@ -39,7 +48,8 @@ impl MikrotikClient {
         username: &str,
         password: &str,
     ) -> AppResult<Vec<RouterApiRoute>> {
-        self.get_json(&format!("https://{wireguard_ip}/rest/ip/route"), username, password)
+        let scheme = self.scheme();
+        self.get_json(&format!("{scheme}://{wireguard_ip}/rest/ip/route"), username, password)
             .await
     }
 

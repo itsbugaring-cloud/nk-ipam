@@ -18,6 +18,7 @@ pub struct AppConfig {
     pub max_scan_concurrency: usize,
     pub scan_cooldown_secs: u64,
     pub session_ttl_secs: u64,
+    pub mikrotik_use_https: bool,
 }
 
 impl AppConfig {
@@ -78,6 +79,9 @@ impl AppConfig {
                 .map_err(|err| {
                     AppError::BadRequest(format!("APP_SESSION_TTL_SECS invalid: {err}"))
                 })?,
+            mikrotik_use_https: env::var("MIKROTIK_USE_HTTPS")
+                .unwrap_or_else(|_| "false".to_string())
+                .eq_ignore_ascii_case("true"),
         })
     }
 }
