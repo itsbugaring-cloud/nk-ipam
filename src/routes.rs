@@ -23,11 +23,11 @@ use crate::{
     models::{
         now_rfc3339, AuditLog, BookmarkOlt, BulkScanItemResult, BulkScanRequest, BulkScanResponse,
         ExplorerResponse, ExplorerRow, HealthResponse, ImportBookmarksResponse, IpPoolRecord, LoginRequest,
-        LoginResponse, MikrotikSettingsResponse, OltOption, RouterApiPool, RouterApiRoute,
-        RouterDetailResponse, RouterRecord, RouterRouteRecord, ScanRouterRequest, ScanRouterResponse,
-        UpdateMikrotikSettingsRequest, UpdateRouterMappingRequest,
+        LoginResponse, MikrotikSettingsResponse, OltOption, RouterAddressRecord, RouterApiAddress,
+        RouterApiPool, RouterApiRoute, RouterDetailResponse, RouterRecord, RouterRouteRecord,
+        ScanRouterRequest, ScanRouterResponse, UpdateMikrotikSettingsRequest, UpdateRouterMappingRequest,
     },
-    net::{parse_scope, ranges_to_scopes},
+    net::{extract_host_ip, parse_scope, ranges_to_scopes},
     parser::parse_bookmarks_html,
 };
 
@@ -428,8 +428,14 @@ async fn get_router_detail(
     .bind(router_id)
     .fetch_all(&state.pool)
     .await?;
+    let addresses = sqlx::query_as::<_, RouterAddressRecord>(
+        "SELECT * FROM router_addresses WHERE router_id = ? ORDER BY interface ASC, id ASC",
+    )
+    .bind(router_id)
+    .fetch_all(&state.pool)
+    .await?;
 
-    Ok(Json(RouterDetailResponse { router, pools, routes }))
+    Ok(Json(RouterDetailResponse { router, pools, routes, addresses }))
 }
 
 async fn list_olts(
@@ -495,6 +501,19 @@ async fn scan_router_payload(
     )
     .await?;
 
+    // Fetch addresses (highest priority data source)
+    let addresses = match state
+        .mikrotik
+        .fetch_addresses(&wireguard_ip, &credentials.username, &credentials.password)
+        .await
+    {
+        Ok(addrs) => addrs,
+        Err(err) => {
+            mark_router_error(&state.pool, router_id, &err.to_string()).await?;
+            return Err(err);
+        }
+    };
+
     let pools = match state
         .mikrotik
         .fetch_pools(&wireguard_ip, &credentials.username, &credentials.password)
@@ -519,9 +538,10 @@ async fn scan_router_payload(
         }
     };
 
+    replace_router_addresses(&state.pool, router_id, &addresses).await?;
     replace_ip_pools(&state.pool, router_id, &pools).await?;
     replace_router_routes(&state.pool, router_id, &routes).await?;
-    let mapping = find_matching_olt(&state.pool, &pools, &routes).await?;
+    let mapping = find_matching_olt(&state.pool, &addresses, &pools, &routes).await?;
     let mapping_source = mapping
         .as_ref()
         .map(|(_, _, reason)| reason.clone())
@@ -828,6 +848,36 @@ async fn upsert_router(
     Ok(row.0)
 }
 
+async fn replace_router_addresses(
+    pool: &SqlitePool,
+    router_id: i64,
+    addresses: &[RouterApiAddress],
+) -> AppResult<()> {
+    sqlx::query("DELETE FROM router_addresses WHERE router_id = ?")
+        .bind(router_id)
+        .execute(pool)
+        .await?;
+
+    for addr in addresses {
+        sqlx::query(
+            r#"
+            INSERT INTO router_addresses (router_id, address, interface, network, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(router_id)
+        .bind(&addr.address)
+        .bind(&addr.interface)
+        .bind(&addr.network)
+        .bind(now_rfc3339())
+        .bind(now_rfc3339())
+        .execute(pool)
+        .await?;
+    }
+
+    Ok(())
+}
+
 async fn replace_ip_pools(pool: &SqlitePool, router_id: i64, pools: &[RouterApiPool]) -> AppResult<()> {
     sqlx::query("DELETE FROM ip_pools WHERE router_id = ?")
         .bind(router_id)
@@ -891,6 +941,7 @@ async fn replace_router_routes(
 
 async fn find_matching_olt(
     pool: &SqlitePool,
+    addresses: &[RouterApiAddress],
     pools: &[RouterApiPool],
     routes: &[RouterApiRoute],
 ) -> AppResult<Option<(i64, String, String)>> {
@@ -898,15 +949,10 @@ async fn find_matching_olt(
         .fetch_all(pool)
         .await?;
 
-    let route_scopes: Vec<_> = routes
+    // Priority 1: Match against interface addresses
+    let interface_ips: Vec<IpAddr> = addresses
         .iter()
-        .filter_map(|route| route.dst_address.as_deref())
-        .filter_map(parse_scope)
-        .collect();
-
-    let pool_scopes: Vec<_> = pools
-        .iter()
-        .flat_map(|item| ranges_to_scopes(&item.ranges))
+        .filter_map(|entry| extract_host_ip(&entry.address))
         .collect();
 
     for olt in &olts {
@@ -914,18 +960,39 @@ async fn find_matching_olt(
             Ok(ip) => ip,
             Err(_) => continue,
         };
+        if interface_ips.contains(&ip) {
+            return Ok(Some((olt.id, olt.ip_address.clone(), "auto_address".to_string())));
+        }
+    }
 
+    // Priority 2: Match against route dst-addresses
+    let route_scopes: Vec<_> = routes
+        .iter()
+        .filter_map(|route| route.dst_address.as_deref())
+        .filter_map(parse_scope)
+        .collect();
+
+    for olt in &olts {
+        let ip = match olt.ip_address.parse::<IpAddr>() {
+            Ok(ip) => ip,
+            Err(_) => continue,
+        };
         if route_scopes.iter().any(|scope| scope.contains_ip(ip)) {
             return Ok(Some((olt.id, olt.ip_address.clone(), "auto_route".to_string())));
         }
     }
+
+    // Priority 3: Match against pool ranges
+    let pool_scopes: Vec<_> = pools
+        .iter()
+        .flat_map(|item| ranges_to_scopes(&item.ranges))
+        .collect();
 
     for olt in olts {
         let ip = match olt.ip_address.parse::<IpAddr>() {
             Ok(ip) => ip,
             Err(_) => continue,
         };
-
         if pool_scopes.iter().any(|scope| scope.contains_ip(ip)) {
             return Ok(Some((olt.id, olt.ip_address.clone(), "auto_pool".to_string())));
         }

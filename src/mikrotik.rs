@@ -5,7 +5,7 @@ use reqwest::Client;
 use crate::{
     app_error::{AppError, AppResult},
     config::AppConfig,
-    models::{RouterApiPool, RouterApiRoute},
+    models::{RouterApiAddress, RouterApiPool, RouterApiRoute},
 };
 
 #[derive(Clone)]
@@ -29,6 +29,17 @@ impl MikrotikClient {
 
     fn scheme(&self) -> &str {
         if self.use_https { "https" } else { "http" }
+    }
+
+    pub async fn fetch_addresses(
+        &self,
+        wireguard_ip: &str,
+        username: &str,
+        password: &str,
+    ) -> AppResult<Vec<RouterApiAddress>> {
+        let scheme = self.scheme();
+        self.get_json(&format!("{scheme}://{wireguard_ip}/rest/ip/address"), username, password)
+            .await
     }
 
     pub async fn fetch_pools(

@@ -125,6 +125,24 @@ pub struct BookmarkOlt {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RouterApiAddress {
+    pub address: String,
+    pub interface: String,
+    pub network: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct RouterAddressRecord {
+    pub id: i64,
+    pub router_id: i64,
+    pub address: String,
+    pub interface: String,
+    pub network: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RouterApiPool {
     pub name: String,
     pub ranges: String,
@@ -162,6 +180,7 @@ pub struct RouterDetailResponse {
     pub router: ExplorerRow,
     pub pools: Vec<IpPoolRecord>,
     pub routes: Vec<RouterRouteRecord>,
+    pub addresses: Vec<RouterAddressRecord>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
