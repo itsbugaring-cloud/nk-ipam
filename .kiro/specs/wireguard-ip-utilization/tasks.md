@@ -7,7 +7,7 @@ This plan implements WireGuard data collection from MikroTik routers and a subne
 ## Tasks
 
 - [ ] 1. Database migration and model structs
-  - [-] 1.1 Create migration `migrations/0003_wireguard_subnets.sql`
+  - [x] 1.1 Create migration `migrations/0003_wireguard_subnets.sql`
     - Add `wireguard_interfaces` table with columns: id, router_id, name, listen_port, public_key, mtu, running, disabled, created_at, updated_at
     - Add `wireguard_peers` table with columns: id, router_id, interface_name, public_key, endpoint_address, endpoint_port, allowed_address, current_endpoint_address, current_endpoint_port, last_handshake, rx, tx, created_at, updated_at
     - Add `subnet_definitions` table with columns: id, cidr (UNIQUE), label, created_at, updated_at

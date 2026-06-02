@@ -565,12 +565,21 @@
       `).join('');
     }
     function renderOltOptions(row) {
+      // Get OLT IDs that are already auto-mapped to OTHER routers
+      const mappedOltIds = new Set(
+        state.rows
+          .filter(r => r.olt_id && r.router_id !== row.router_id && r.mapped_by && r.mapped_by !== 'unmapped' && r.mapped_by !== 'manual')
+          .map(r => String(r.olt_id))
+      );
+
       const current = row.olt_name && row.olt_ip ? `${row.olt_name} (${row.olt_ip})` : 'Belum terhubung';
       const base = [`<option value="">Lepas mapping (${escapeHtml(current)})</option>`];
-      const options = state.olts.map((olt) => {
-        const selected = String(olt.id) === String(row.olt_id || '') ? 'selected' : '';
-        return `<option value="${escapeHtml(String(olt.id))}" ${selected}>${escapeHtml(olt.name)} (${escapeHtml(olt.ip_address)})</option>`;
-      });
+      const options = state.olts
+        .filter(olt => !mappedOltIds.has(String(olt.id)) || String(olt.id) === String(row.olt_id || ''))
+        .map((olt) => {
+          const selected = String(olt.id) === String(row.olt_id || '') ? 'selected' : '';
+          return `<option value="${escapeHtml(String(olt.id))}" ${selected}>${escapeHtml(olt.name)} (${escapeHtml(olt.ip_address)})</option>`;
+        });
       return base.concat(options).join('');
     }
 
@@ -1090,7 +1099,7 @@
         const response = await authFetch('/api/bookmarks/import', { method: 'POST', body: formData });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || 'Import bookmark gagal');
-        setFlash(`Sinkronisasi selesai. ${data.imported} record OLT diproses.`, 'success');
+        setFlash(`Sinkronisasi selesai. ${data.imported} record OLT diproses. Mapping yang sudah ada tetap dipertahankan.`, 'success');
         await Promise.all([loadOlts(), loadExplorer(), loadAuditLogs()]);
       } catch (error) {
         setFlash(error.message, 'error');
