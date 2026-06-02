@@ -7,6 +7,7 @@ mod models;
 mod net;
 mod parser;
 mod routes;
+mod utilization;
 
 use std::path::Path;
 

@@ -4,7 +4,7 @@ use axum::{
     extract::{Multipart, Path, Query, State},
     http::{header, HeaderMap, HeaderValue, StatusCode},
     response::IntoResponse,
-    routing::{get, post},
+    routing::{delete, get, post, put},
     Json, Router,
 };
 use base64::Engine;
@@ -26,9 +26,13 @@ use crate::{
         LoginResponse, MikrotikSettingsResponse, OltOption, RouterAddressRecord, RouterApiAddress,
         RouterApiPool, RouterApiRoute, RouterDetailResponse, RouterRecord, RouterRouteRecord,
         ScanRouterRequest, ScanRouterResponse, UpdateMikrotikSettingsRequest, UpdateRouterMappingRequest,
+        WireguardApiInterface, WireguardApiPeer, WireguardInterfaceRecord, WireguardPeerRecord,
+        SubnetDefinitionRecord, CreateSubnetRequest, UpdateSubnetRequest, WireguardDataResponse,
+        SubnetUtilizationResponse, SubnetSuggestion,
     },
-    net::{extract_host_ip, parse_scope, ranges_to_scopes},
+    net::{extract_host_ip, parse_scope, ranges_to_scopes, validate_cidr},
     parser::parse_bookmarks_html,
+    utilization,
 };
 
 type HmacSha256 = Hmac<Sha256>;
@@ -67,10 +71,16 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/routers/:id/rescan", post(rescan_router))
         .route("/api/routers/:id/map-olt", post(update_router_mapping))
         .route("/api/routers/:id/detail", get(get_router_detail))
+        .route("/api/routers/:id/wireguard", get(get_router_wireguard))
         .route("/api/routers/export.csv", get(export_explorer_csv))
         .route("/api/olts", get(list_olts))
         .route("/api/explorer", get(list_explorer))
         .route("/api/audit-logs", get(list_audit_logs))
+        // Subnet routes: literal paths BEFORE parameterized paths
+        .route("/api/subnets/utilization", get(get_subnet_utilization))
+        .route("/api/subnets/suggestions", get(get_subnet_suggestions))
+        .route("/api/subnets", get(list_subnets).post(create_subnet))
+        .route("/api/subnets/:id", put(update_subnet).delete(delete_subnet))
         .with_state(state)
 }
 
@@ -434,8 +444,20 @@ async fn get_router_detail(
     .bind(router_id)
     .fetch_all(&state.pool)
     .await?;
+    let wireguard_interfaces = sqlx::query_as::<_, WireguardInterfaceRecord>(
+        "SELECT * FROM wireguard_interfaces WHERE router_id = ? ORDER BY name ASC",
+    )
+    .bind(router_id)
+    .fetch_all(&state.pool)
+    .await?;
+    let wireguard_peers = sqlx::query_as::<_, WireguardPeerRecord>(
+        "SELECT * FROM wireguard_peers WHERE router_id = ? ORDER BY interface_name ASC, id ASC",
+    )
+    .bind(router_id)
+    .fetch_all(&state.pool)
+    .await?;
 
-    Ok(Json(RouterDetailResponse { router, pools, routes, addresses }))
+    Ok(Json(RouterDetailResponse { router, pools, routes, addresses, wireguard_interfaces, wireguard_peers }))
 }
 
 async fn list_olts(
@@ -541,6 +563,35 @@ async fn scan_router_payload(
     replace_router_addresses(&state.pool, router_id, &addresses).await?;
     replace_ip_pools(&state.pool, router_id, &pools).await?;
     replace_router_routes(&state.pool, router_id, &routes).await?;
+
+    // Fetch WireGuard data (non-fatal — graceful degradation)
+    let wg_interfaces = match state
+        .mikrotik
+        .fetch_wireguard_interfaces(&wireguard_ip, &credentials.username, &credentials.password)
+        .await
+    {
+        Ok(ifaces) => ifaces,
+        Err(err) => {
+            tracing::warn!(router_id, %wireguard_ip, %err, "WireGuard interfaces fetch failed");
+            Vec::new()
+        }
+    };
+
+    let wg_peers = match state
+        .mikrotik
+        .fetch_wireguard_peers(&wireguard_ip, &credentials.username, &credentials.password)
+        .await
+    {
+        Ok(peers) => peers,
+        Err(err) => {
+            tracing::warn!(router_id, %wireguard_ip, %err, "WireGuard peers fetch failed");
+            Vec::new()
+        }
+    };
+
+    replace_wireguard_interfaces(&state.pool, router_id, &wg_interfaces).await?;
+    replace_wireguard_peers(&state.pool, router_id, &wg_peers).await?;
+
     let mapping = find_matching_olt(&state.pool, &addresses, &pools, &routes).await?;
     let mapping_source = mapping
         .as_ref()
@@ -1164,6 +1215,281 @@ async fn upsert_setting(pool: &SqlitePool, key: &str, value: Option<&str>) -> Ap
 fn csv_escape(input: &str) -> String {
     let escaped = input.replace('"', "\"\"");
     format!("\"{escaped}\"")
+}
+
+// --- WireGuard replace functions ---
+
+async fn replace_wireguard_interfaces(
+    pool: &SqlitePool,
+    router_id: i64,
+    interfaces: &[WireguardApiInterface],
+) -> AppResult<()> {
+    sqlx::query("DELETE FROM wireguard_interfaces WHERE router_id = ?")
+        .bind(router_id)
+        .execute(pool)
+        .await?;
+
+    for iface in interfaces {
+        let running: bool = iface.running.as_deref() == Some("true");
+        let disabled: bool = iface.disabled.as_deref() == Some("true");
+        sqlx::query(
+            r#"
+            INSERT INTO wireguard_interfaces (router_id, name, listen_port, public_key, mtu, running, disabled, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(router_id)
+        .bind(&iface.name)
+        .bind(&iface.listen_port)
+        .bind(&iface.public_key)
+        .bind(&iface.mtu)
+        .bind(running)
+        .bind(disabled)
+        .bind(now_rfc3339())
+        .bind(now_rfc3339())
+        .execute(pool)
+        .await?;
+    }
+
+    Ok(())
+}
+
+async fn replace_wireguard_peers(
+    pool: &SqlitePool,
+    router_id: i64,
+    peers: &[WireguardApiPeer],
+) -> AppResult<()> {
+    sqlx::query("DELETE FROM wireguard_peers WHERE router_id = ?")
+        .bind(router_id)
+        .execute(pool)
+        .await?;
+
+    for peer in peers {
+        sqlx::query(
+            r#"
+            INSERT INTO wireguard_peers (router_id, interface_name, public_key, endpoint_address, endpoint_port, allowed_address, current_endpoint_address, current_endpoint_port, last_handshake, rx, tx, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(router_id)
+        .bind(&peer.interface)
+        .bind(&peer.public_key)
+        .bind(&peer.endpoint_address)
+        .bind(&peer.endpoint_port)
+        .bind(&peer.allowed_address)
+        .bind(&peer.current_endpoint_address)
+        .bind(&peer.current_endpoint_port)
+        .bind(&peer.last_handshake)
+        .bind(&peer.rx)
+        .bind(&peer.tx)
+        .bind(now_rfc3339())
+        .bind(now_rfc3339())
+        .execute(pool)
+        .await?;
+    }
+
+    Ok(())
+}
+
+// --- WireGuard endpoint ---
+
+async fn get_router_wireguard(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(router_id): Path<i64>,
+) -> AppResult<Json<WireguardDataResponse>> {
+    let _actor = require_auth(&state, &headers)?;
+
+    // Verify router exists
+    let exists: Option<(i64,)> = sqlx::query_as("SELECT id FROM routers WHERE id = ?")
+        .bind(router_id)
+        .fetch_optional(&state.pool)
+        .await?;
+    if exists.is_none() {
+        return Err(AppError::NotFound(format!("router {router_id} not found")));
+    }
+
+    let interfaces = sqlx::query_as::<_, WireguardInterfaceRecord>(
+        "SELECT * FROM wireguard_interfaces WHERE router_id = ? ORDER BY name ASC",
+    )
+    .bind(router_id)
+    .fetch_all(&state.pool)
+    .await?;
+
+    let peers = sqlx::query_as::<_, WireguardPeerRecord>(
+        "SELECT * FROM wireguard_peers WHERE router_id = ? ORDER BY interface_name ASC, id ASC",
+    )
+    .bind(router_id)
+    .fetch_all(&state.pool)
+    .await?;
+
+    Ok(Json(WireguardDataResponse { interfaces, peers }))
+}
+
+// --- Subnet CRUD ---
+
+async fn list_subnets(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> AppResult<Json<Vec<SubnetDefinitionRecord>>> {
+    let _actor = require_auth(&state, &headers)?;
+    let rows = sqlx::query_as::<_, SubnetDefinitionRecord>(
+        "SELECT * FROM subnet_definitions ORDER BY cidr ASC",
+    )
+    .fetch_all(&state.pool)
+    .await?;
+    Ok(Json(rows))
+}
+
+async fn create_subnet(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<CreateSubnetRequest>,
+) -> AppResult<(StatusCode, Json<SubnetDefinitionRecord>)> {
+    let _actor = require_auth(&state, &headers)?;
+
+    let net = validate_cidr(&payload.cidr)
+        .map_err(|e| AppError::BadRequest(e))?;
+    let cidr = net.to_string();
+
+    // Check for duplicate
+    let existing: Option<(i64,)> = sqlx::query_as("SELECT id FROM subnet_definitions WHERE cidr = ?")
+        .bind(&cidr)
+        .fetch_optional(&state.pool)
+        .await?;
+    if existing.is_some() {
+        return Err(AppError::Conflict(format!("subnet {cidr} already exists")));
+    }
+
+    let now = now_rfc3339();
+    sqlx::query(
+        "INSERT INTO subnet_definitions (cidr, label, created_at, updated_at) VALUES (?, ?, ?, ?)",
+    )
+    .bind(&cidr)
+    .bind(&payload.label)
+    .bind(&now)
+    .bind(&now)
+    .execute(&state.pool)
+    .await?;
+
+    let record = sqlx::query_as::<_, SubnetDefinitionRecord>(
+        "SELECT * FROM subnet_definitions WHERE cidr = ?",
+    )
+    .bind(&cidr)
+    .fetch_one(&state.pool)
+    .await?;
+
+    Ok((StatusCode::CREATED, Json(record)))
+}
+
+async fn update_subnet(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(subnet_id): Path<i64>,
+    Json(payload): Json<UpdateSubnetRequest>,
+) -> AppResult<Json<SubnetDefinitionRecord>> {
+    let _actor = require_auth(&state, &headers)?;
+
+    let existing = sqlx::query_as::<_, SubnetDefinitionRecord>(
+        "SELECT * FROM subnet_definitions WHERE id = ?",
+    )
+    .bind(subnet_id)
+    .fetch_optional(&state.pool)
+    .await?;
+
+    let Some(existing) = existing else {
+        return Err(AppError::NotFound(format!("subnet {subnet_id} not found")));
+    };
+
+    let new_cidr = if let Some(ref cidr_input) = payload.cidr {
+        let net = validate_cidr(cidr_input)
+            .map_err(|e| AppError::BadRequest(e))?;
+        let cidr = net.to_string();
+        // Check for duplicate if CIDR changed
+        if cidr != existing.cidr {
+            let dup: Option<(i64,)> = sqlx::query_as("SELECT id FROM subnet_definitions WHERE cidr = ? AND id != ?")
+                .bind(&cidr)
+                .bind(subnet_id)
+                .fetch_optional(&state.pool)
+                .await?;
+            if dup.is_some() {
+                return Err(AppError::Conflict(format!("subnet {cidr} already exists")));
+            }
+        }
+        cidr
+    } else {
+        existing.cidr.clone()
+    };
+
+    let new_label = payload.label.unwrap_or(existing.label);
+
+    sqlx::query("UPDATE subnet_definitions SET cidr = ?, label = ?, updated_at = ? WHERE id = ?")
+        .bind(&new_cidr)
+        .bind(&new_label)
+        .bind(now_rfc3339())
+        .bind(subnet_id)
+        .execute(&state.pool)
+        .await?;
+
+    let record = sqlx::query_as::<_, SubnetDefinitionRecord>(
+        "SELECT * FROM subnet_definitions WHERE id = ?",
+    )
+    .bind(subnet_id)
+    .fetch_one(&state.pool)
+    .await?;
+
+    Ok(Json(record))
+}
+
+async fn delete_subnet(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(subnet_id): Path<i64>,
+) -> AppResult<StatusCode> {
+    let _actor = require_auth(&state, &headers)?;
+
+    let result = sqlx::query("DELETE FROM subnet_definitions WHERE id = ?")
+        .bind(subnet_id)
+        .execute(&state.pool)
+        .await?;
+
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound(format!("subnet {subnet_id} not found")));
+    }
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+// --- Utilization and suggestions endpoints ---
+
+async fn get_subnet_utilization(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> AppResult<Json<SubnetUtilizationResponse>> {
+    let _actor = require_auth(&state, &headers)?;
+    let subnets = sqlx::query_as::<_, SubnetDefinitionRecord>(
+        "SELECT * FROM subnet_definitions ORDER BY cidr ASC",
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
+    let utilization = utilization::compute_utilization(&state.pool, &subnets).await?;
+    Ok(Json(SubnetUtilizationResponse { subnets: utilization }))
+}
+
+async fn get_subnet_suggestions(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> AppResult<Json<Vec<SubnetSuggestion>>> {
+    let _actor = require_auth(&state, &headers)?;
+    let existing = sqlx::query_as::<_, SubnetDefinitionRecord>(
+        "SELECT * FROM subnet_definitions ORDER BY cidr ASC",
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
+    let suggestions = utilization::compute_suggestions(&state.pool, &existing).await?;
+    Ok(Json(suggestions))
 }
 
 fn issue_session_token(config: &AppConfig, username: &str, expires_at: DateTime<Utc>) -> AppResult<String> {

@@ -5,7 +5,7 @@ use reqwest::Client;
 use crate::{
     app_error::{AppError, AppResult},
     config::AppConfig,
-    models::{RouterApiAddress, RouterApiPool, RouterApiRoute},
+    models::{RouterApiAddress, RouterApiPool, RouterApiRoute, WireguardApiInterface, WireguardApiPeer},
 };
 
 #[derive(Clone)]
@@ -62,6 +62,36 @@ impl MikrotikClient {
         let scheme = self.scheme();
         self.get_json(&format!("{scheme}://{wireguard_ip}/rest/ip/route"), username, password)
             .await
+    }
+
+    pub async fn fetch_wireguard_interfaces(
+        &self,
+        wireguard_ip: &str,
+        username: &str,
+        password: &str,
+    ) -> AppResult<Vec<WireguardApiInterface>> {
+        let scheme = self.scheme();
+        self.get_json(
+            &format!("{scheme}://{wireguard_ip}/rest/interface/wireguard"),
+            username,
+            password,
+        )
+        .await
+    }
+
+    pub async fn fetch_wireguard_peers(
+        &self,
+        wireguard_ip: &str,
+        username: &str,
+        password: &str,
+    ) -> AppResult<Vec<WireguardApiPeer>> {
+        let scheme = self.scheme();
+        self.get_json(
+            &format!("{scheme}://{wireguard_ip}/rest/interface/wireguard/peers"),
+            username,
+            password,
+        )
+        .await
     }
 
     async fn get_json<T>(&self, url: &str, username: &str, password: &str) -> AppResult<T>

@@ -2,6 +2,89 @@ use std::net::{IpAddr, Ipv4Addr};
 
 use ipnet::IpNet;
 
+/// Validates that the input is a well-formed CIDR (IPv4 or IPv6) with correct network address.
+pub fn validate_cidr(input: &str) -> Result<IpNet, String> {
+    let trimmed = input.trim();
+    let net: IpNet = trimmed
+        .parse()
+        .map_err(|e| format!("invalid CIDR: {e}"))?;
+    // Ensure the host bits are zeroed (it's a proper network address)
+    let trunc = net.trunc();
+    if trunc != net {
+        return Err(format!(
+            "CIDR has non-zero host bits; did you mean {}?",
+            trunc
+        ));
+    }
+    Ok(net)
+}
+
+/// Checks if an IP is within the subnet, excluding network and broadcast for IPv4.
+pub fn ip_in_subnet(ip: IpAddr, net: &IpNet) -> bool {
+    if !net.contains(&ip) {
+        return false;
+    }
+    // For IPv4, exclude network and broadcast addresses (only for prefix < 31)
+    if let (IpAddr::V4(v4), IpNet::V4(v4net)) = (ip, net) {
+        let prefix = v4net.prefix_len();
+        if prefix < 31 {
+            let network_addr = v4net.network();
+            let broadcast_addr = v4net.broadcast();
+            if v4 == network_addr || v4 == broadcast_addr {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+/// Computes the total number of usable host addresses in a subnet.
+/// For IPv4: 2^host_bits - 2 (excluding network and broadcast). Minimum 0 for /31 and /32.
+/// For IPv6: 2^host_bits (capped at u64::MAX).
+pub fn total_hosts(net: &IpNet) -> u64 {
+    match net {
+        IpNet::V4(v4net) => {
+            let prefix = v4net.prefix_len();
+            if prefix >= 31 {
+                // /31 = 2 usable (point-to-point), /32 = 1 usable
+                2u64.saturating_pow(32 - prefix as u32)
+            } else {
+                let host_bits = 32 - prefix as u32;
+                2u64.pow(host_bits) - 2
+            }
+        }
+        IpNet::V6(v6net) => {
+            let prefix = v6net.prefix_len();
+            let host_bits = 128 - prefix as u32;
+            if host_bits >= 64 {
+                u64::MAX
+            } else {
+                2u64.pow(host_bits)
+            }
+        }
+    }
+}
+
+/// Expands an IPv4 range (start..=end) and returns IPs that fall within the given subnet.
+/// Capped at 1024 IPs per range to prevent memory issues.
+pub fn expand_range_in_subnet(start: Ipv4Addr, end: Ipv4Addr, net: &IpNet) -> Vec<IpAddr> {
+    let start_u32 = u32::from(start);
+    let end_u32 = u32::from(end);
+    if end_u32 < start_u32 {
+        return Vec::new();
+    }
+    let count = (end_u32 - start_u32 + 1).min(1024);
+    let mut result = Vec::new();
+    for i in 0..count {
+        let ip = Ipv4Addr::from(start_u32 + i);
+        let addr = IpAddr::V4(ip);
+        if ip_in_subnet(addr, net) {
+            result.push(addr);
+        }
+    }
+    result
+}
+
 #[derive(Debug, Clone)]
 pub enum AddressScope {
     Cidr(IpNet),

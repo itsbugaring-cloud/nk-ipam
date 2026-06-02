@@ -22,6 +22,10 @@ pub enum AppError {
     BadRequest(String),
     #[error("unauthorized")]
     Unauthorized,
+    #[error("not found: {0}")]
+    NotFound(String),
+    #[error("conflict: {0}")]
+    Conflict(String),
     #[error("upstream API error: {0}")]
     Upstream(String),
     #[error("internal error: {0}")]
@@ -38,6 +42,8 @@ impl IntoResponse for AppError {
         let status = match self {
             AppError::BadRequest(_) => StatusCode::BAD_REQUEST,
             AppError::Unauthorized => StatusCode::UNAUTHORIZED,
+            AppError::NotFound(_) => StatusCode::NOT_FOUND,
+            AppError::Conflict(_) => StatusCode::CONFLICT,
             AppError::Upstream(_) => StatusCode::BAD_GATEWAY,
             AppError::Multipart(_) => StatusCode::BAD_REQUEST,
             AppError::Database(_)

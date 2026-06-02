@@ -181,6 +181,8 @@ pub struct RouterDetailResponse {
     pub pools: Vec<IpPoolRecord>,
     pub routes: Vec<RouterRouteRecord>,
     pub addresses: Vec<RouterAddressRecord>,
+    pub wireguard_interfaces: Vec<WireguardInterfaceRecord>,
+    pub wireguard_peers: Vec<WireguardPeerRecord>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -225,6 +227,146 @@ pub struct AuditLog {
     pub target_id: Option<String>,
     pub detail: Option<String>,
     pub created_at: String,
+}
+
+// --- WireGuard MikroTik API response types ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WireguardApiInterface {
+    pub name: String,
+    #[serde(rename = "listen-port")]
+    pub listen_port: Option<String>,
+    #[serde(rename = "public-key")]
+    pub public_key: Option<String>,
+    #[serde(rename = "private-key")]
+    pub private_key: Option<String>,
+    pub mtu: Option<String>,
+    pub running: Option<String>,
+    pub disabled: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WireguardApiPeer {
+    pub interface: Option<String>,
+    #[serde(rename = "public-key")]
+    pub public_key: Option<String>,
+    #[serde(rename = "endpoint-address")]
+    pub endpoint_address: Option<String>,
+    #[serde(rename = "endpoint-port")]
+    pub endpoint_port: Option<String>,
+    #[serde(rename = "allowed-address")]
+    pub allowed_address: Option<String>,
+    #[serde(rename = "current-endpoint-address")]
+    pub current_endpoint_address: Option<String>,
+    #[serde(rename = "current-endpoint-port")]
+    pub current_endpoint_port: Option<String>,
+    #[serde(rename = "last-handshake")]
+    pub last_handshake: Option<String>,
+    pub rx: Option<String>,
+    pub tx: Option<String>,
+}
+
+// --- WireGuard database records ---
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct WireguardInterfaceRecord {
+    pub id: i64,
+    pub router_id: i64,
+    pub name: String,
+    pub listen_port: Option<String>,
+    pub public_key: Option<String>,
+    pub mtu: Option<String>,
+    pub running: bool,
+    pub disabled: bool,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct WireguardPeerRecord {
+    pub id: i64,
+    pub router_id: i64,
+    pub interface_name: Option<String>,
+    pub public_key: Option<String>,
+    pub endpoint_address: Option<String>,
+    pub endpoint_port: Option<String>,
+    pub allowed_address: Option<String>,
+    pub current_endpoint_address: Option<String>,
+    pub current_endpoint_port: Option<String>,
+    pub last_handshake: Option<String>,
+    pub rx: Option<String>,
+    pub tx: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+// --- Subnet definitions ---
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct SubnetDefinitionRecord {
+    pub id: i64,
+    pub cidr: String,
+    pub label: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CreateSubnetRequest {
+    pub cidr: String,
+    pub label: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct UpdateSubnetRequest {
+    pub cidr: Option<String>,
+    pub label: Option<String>,
+}
+
+// --- Utilization response types ---
+
+#[derive(Debug, Clone, Serialize)]
+pub struct WireguardDataResponse {
+    pub interfaces: Vec<WireguardInterfaceRecord>,
+    pub peers: Vec<WireguardPeerRecord>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SubnetUtilizationResponse {
+    pub subnets: Vec<SubnetUtilization>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SubnetUtilization {
+    pub id: i64,
+    pub cidr: String,
+    pub label: String,
+    pub total_hosts: u64,
+    pub used_count: u64,
+    pub available_count: u64,
+    pub utilization_pct: f64,
+    pub used_ips: Vec<UsedIpEntry>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct UsedIpEntry {
+    pub ip: String,
+    pub sources: Vec<IpSource>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct IpSource {
+    pub source_type: String,
+    pub router_id: i64,
+    pub router_name: String,
+    pub detail: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SubnetSuggestion {
+    pub cidr: String,
+    pub proposed_label: String,
+    pub source_description: String,
 }
 
 pub fn now_rfc3339() -> String {
