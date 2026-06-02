@@ -252,10 +252,15 @@ pub async fn compute_suggestions(
         }
     }
 
-    // From router_routes.dst_address field
+    // From router_routes.dst_address field (skip /32 and /0 — only useful subnets)
     for route in &routes {
         if let Some(dst) = &route.dst_address {
             if let Ok(net) = validate_cidr(dst) {
+                let prefix = net.prefix_len();
+                // Skip individual host routes (/32, /31) and default route (/0)
+                if prefix >= 31 || prefix == 0 {
+                    continue;
+                }
                 let cidr = net.to_string();
                 if !existing_cidrs.contains(&cidr) && seen.insert(cidr.clone()) {
                     let router_name = router_names
@@ -272,12 +277,16 @@ pub async fn compute_suggestions(
         }
     }
 
-    // From wireguard_peers.allowed_address field
+    // From wireguard_peers.allowed_address field (skip /32 individual peers)
     for peer in &wg_peers {
         if let Some(allowed) = &peer.allowed_address {
             for addr_str in allowed.split(',') {
                 let trimmed = addr_str.trim();
                 if let Ok(net) = validate_cidr(trimmed) {
+                    let prefix = net.prefix_len();
+                    if prefix >= 31 || prefix == 0 {
+                        continue;
+                    }
                     let cidr = net.to_string();
                     if !existing_cidrs.contains(&cidr) && seen.insert(cidr.clone()) {
                         let router_name = router_names
