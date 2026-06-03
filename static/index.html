@@ -97,6 +97,51 @@
       </form>
     </div>
   </div>
+  <!-- Welcome Modal -->
+  <div id="welcomeModal" class="fixed inset-0 z-[60] hidden items-center justify-center bg-slate-950/60 p-4 backdrop-blur-md">
+    <div class="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-8 shadow-2xl dark:border-slate-700 dark:bg-slate-800">
+      <div class="flex items-center gap-3 mb-4">
+        <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-teal-600 text-white font-bold text-sm">NK</div>
+        <div>
+          <h2 class="text-xl font-bold text-slate-900 dark:text-white">Welcome to Netking IPAM 👋</h2>
+          <p class="text-xs text-slate-500 dark:text-slate-400 font-medium">Network Inventory Explorer</p>
+        </div>
+      </div>
+      <p class="text-sm text-slate-600 dark:text-slate-300 mb-5">Berikut fitur utama yang bisa kamu gunakan:</p>
+      <div class="grid gap-3 mb-6">
+        <div class="flex items-start gap-3 rounded-lg border border-slate-100 bg-slate-50/50 px-4 py-3 dark:border-slate-700 dark:bg-slate-700/30">
+          <span class="text-lg shrink-0">🔍</span>
+          <div>
+            <div class="text-sm font-semibold text-slate-800 dark:text-slate-200">Scan MikroTik Routers</div>
+            <div class="text-xs text-slate-500 dark:text-slate-400">Pull IP addresses, pools, routes, and WireGuard data via REST API</div>
+          </div>
+        </div>
+        <div class="flex items-start gap-3 rounded-lg border border-slate-100 bg-slate-50/50 px-4 py-3 dark:border-slate-700 dark:bg-slate-700/30">
+          <span class="text-lg shrink-0">📡</span>
+          <div>
+            <div class="text-sm font-semibold text-slate-800 dark:text-slate-200">OLT Mapping</div>
+            <div class="text-xs text-slate-500 dark:text-slate-400">Auto-map routers to OLTs based on interface addresses</div>
+          </div>
+        </div>
+        <div class="flex items-start gap-3 rounded-lg border border-slate-100 bg-slate-50/50 px-4 py-3 dark:border-slate-700 dark:bg-slate-700/30">
+          <span class="text-lg shrink-0">📊</span>
+          <div>
+            <div class="text-sm font-semibold text-slate-800 dark:text-slate-200">Subnet Utilization</div>
+            <div class="text-xs text-slate-500 dark:text-slate-400">Track used vs available IPs per subnet</div>
+          </div>
+        </div>
+        <div class="flex items-start gap-3 rounded-lg border border-slate-100 bg-slate-50/50 px-4 py-3 dark:border-slate-700 dark:bg-slate-700/30">
+          <span class="text-lg shrink-0">📋</span>
+          <div>
+            <div class="text-sm font-semibold text-slate-800 dark:text-slate-200">Export & Audit</div>
+            <div class="text-xs text-slate-500 dark:text-slate-400">Export data to CSV/Excel/PDF, full audit trail</div>
+          </div>
+        </div>
+      </div>
+      <button id="welcomeGetStarted" type="button" class="w-full rounded-lg bg-teal-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-teal-700 transition-colors focus:ring-2 focus:ring-teal-500/40 focus:outline-none">Get Started</button>
+    </div>
+  </div>
+
   <!-- Detail Drawer -->
   <aside id="detailDrawer" class="fixed right-0 top-0 z-40 h-full w-full max-w-2xl translate-x-full overflow-y-auto border-l border-slate-200 bg-white shadow-2xl transition-transform duration-300 dark:border-slate-700 dark:bg-slate-800">
     <div class="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-slate-200 bg-white/95 backdrop-blur px-6 py-4 dark:border-slate-700 dark:bg-slate-800/95">
@@ -127,6 +172,8 @@
             <span id="apiStatus">Checking...</span>
           </div>
           <div id="authBadge" class="hidden sm:block text-[11px] text-slate-500 font-medium">Auth: pending</div>
+          <button id="quickScanBtn" type="button" class="hidden rounded-full bg-teal-600/20 border border-teal-500/40 px-3 py-1 text-[11px] font-medium text-teal-300 hover:bg-teal-600/30 transition-colors">Scan</button>
+          <button id="quickSubnetsBtn" type="button" class="hidden rounded-full bg-slate-700 border border-slate-600 px-3 py-1 text-[11px] font-medium text-slate-300 hover:bg-slate-600 transition-colors">Subnets</button>
           <button id="logoutButton" class="hidden rounded-md bg-slate-800 border border-slate-700 px-3 py-1.5 text-[11px] font-medium text-slate-300 hover:bg-slate-700 transition-colors">Logout</button>
         </div>
       </div>
@@ -141,7 +188,7 @@
         <p class="text-sm text-slate-600 dark:text-slate-400">Sinkronisasi data OLT dari bookmark browser, tarik pool MikroTik lewat IP WireGuard, lalu petakan relasinya secara otomatis.</p>
       </div>
       <div class="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-        <span>Mode: Direct RouterOS REST API via WireGuard</span>
+        <span id="lastScanInfo">Mode: Direct RouterOS REST API via WireGuard</span>
       </div>
     </div>
 
@@ -183,6 +230,11 @@
           <div class="text-[11px] text-slate-500 dark:text-slate-400">Subnets Defined</div>
         </div>
       </div>
+    </section>
+
+    <!-- Alert Banner -->
+    <section id="alertBanner" class="hidden grid gap-2 mb-6">
+      <!-- alerts rendered here by JS -->
     </section>
 
     <!-- Upload & Scan Section -->
@@ -551,6 +603,7 @@
     async function bootstrapApp() {
       await Promise.all([loadOlts(), loadExplorer(), loadAuditLogs(), loadMikrotikSettings(), loadSubnetOverview()]);
       renderStatCards();
+      renderAlerts();
       state.bootstrapped = true;
     }
     function setFlash(message, type = 'info') {
@@ -574,6 +627,8 @@
       elements.loginOverlay.classList.remove('hidden');
       elements.loginOverlay.classList.add('flex');
       elements.authBadge.textContent = state.authEnabled ? 'Auth: locked' : 'Auth: disabled';
+      document.getElementById('quickScanBtn').classList.add('hidden');
+      document.getElementById('quickSubnetsBtn').classList.add('hidden');
     }
 
     function hideLogin() {
@@ -583,6 +638,8 @@
       if (state.authEnabled) {
         elements.logoutButton.classList.remove('hidden');
       }
+      document.getElementById('quickScanBtn').classList.remove('hidden');
+      document.getElementById('quickSubnetsBtn').classList.remove('hidden');
     }
 
     function normalizeRows(rows) {
@@ -595,6 +652,71 @@
       elements.defaultRouterPassword.value = '';
       elements.clearDefaultRouterPassword.checked = false;
       elements.mikrotikSettingsBadge.textContent = `Source: ${data.source || 'none'} | Password ${data.password_configured ? 'saved' : 'empty'}`;
+    }
+
+    function timeAgo(dateStr) {
+      if (!dateStr) return '';
+      const date = new Date(dateStr);
+      const now = new Date();
+      const diffMs = now - date;
+      if (diffMs < 0) return 'just now';
+      const seconds = Math.floor(diffMs / 1000);
+      if (seconds < 60) return 'just now';
+      const minutes = Math.floor(seconds / 60);
+      if (minutes < 60) return `${minutes} minute${minutes > 1 ? 's' : ''} ago`;
+      const hours = Math.floor(minutes / 60);
+      if (hours < 24) return `${hours} hour${hours > 1 ? 's' : ''} ago`;
+      const days = Math.floor(hours / 24);
+      return `${days} day${days > 1 ? 's' : ''} ago`;
+    }
+
+    function showWelcomeModal() {
+      if (sessionStorage.getItem('netking_welcomed') === 'true') return;
+      const modal = document.getElementById('welcomeModal');
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
+
+    function hideWelcomeModal() {
+      const modal = document.getElementById('welcomeModal');
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+      sessionStorage.setItem('netking_welcomed', 'true');
+    }
+
+    function renderAlerts() {
+      const container = document.getElementById('alertBanner');
+      const alerts = [];
+
+      // Check MikroTik credentials
+      if (state.mikrotikSettingsSource === 'none') {
+        alerts.push({ type: 'warning', message: '⚠️ Default MikroTik credentials belum dikonfigurasi. Set di panel Scan & Import Tools.' });
+      }
+
+      // Check routers with error status
+      const errorCount = state.rows.filter(r => r.connection_status === 'error').length;
+      if (errorCount > 0) {
+        alerts.push({ type: 'warning', message: `⚠️ Ada ${errorCount} router dengan status error. Periksa koneksi atau kredensial.` });
+      }
+
+      // Check if no routers scanned
+      if (state.rows.length === 0) {
+        alerts.push({ type: 'info', message: 'ℹ️ Belum ada router yang di-scan. Mulai scan dari panel di atas.' });
+      }
+
+      if (alerts.length === 0) {
+        container.classList.add('hidden');
+        container.innerHTML = '';
+        return;
+      }
+
+      container.classList.remove('hidden');
+      container.innerHTML = alerts.map(alert => {
+        if (alert.type === 'warning') {
+          return `<div class="rounded-lg border-l-4 border-l-yellow-500 bg-yellow-50 px-4 py-2.5 text-xs font-medium text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-300">${alert.message}</div>`;
+        }
+        return `<div class="rounded-lg border-l-4 border-l-blue-500 bg-blue-50 px-4 py-2.5 text-xs font-medium text-blue-800 dark:bg-blue-900/20 dark:text-blue-300">${alert.message}</div>`;
+      }).join('');
     }
     function renderAuditLogs(rows) {
       state.auditLogs = rows;
@@ -618,6 +740,22 @@
       document.getElementById('statConnected').textContent = connected;
       document.getElementById('statError').textContent = error;
       document.getElementById('statSubnets').textContent = subnetCount;
+
+      // Update last scan info
+      const lastScanEl = document.getElementById('lastScanInfo');
+      if (state.rows.length > 0) {
+        const timestamps = state.rows
+          .map(r => r.last_scanned_at)
+          .filter(Boolean)
+          .sort((a, b) => new Date(b) - new Date(a));
+        if (timestamps.length > 0) {
+          lastScanEl.textContent = `Last scan: ${timeAgo(timestamps[0])}`;
+        } else {
+          lastScanEl.textContent = 'Mode: Direct RouterOS REST API via WireGuard';
+        }
+      } else {
+        lastScanEl.textContent = 'Mode: Direct RouterOS REST API via WireGuard';
+      }
     }
 
     function filterAndRenderAuditLogs() {
@@ -741,6 +879,7 @@
       renderTable(state.rows);
       updatePagination();
       renderStatCards();
+      renderAlerts();
     }
 
     async function loadOlts() {
@@ -1186,6 +1325,7 @@
         hideLogin();
         setFlash(`Login berhasil sebagai ${data.username}.`, 'success');
         await bootstrapApp();
+        showWelcomeModal();
       } catch (error) {
         state.bootstrapped = false;
         setFlash(error.message, 'error');
@@ -1461,6 +1601,7 @@
 
     elements.loginForm.addEventListener('submit', handleLogin);
     document.getElementById('addSubnetForm').addEventListener('submit', handleAddSubnet);
+    document.getElementById('welcomeGetStarted').addEventListener('click', hideWelcomeModal);
     elements.logoutButton.addEventListener('click', () => {
       clearSession();
       showLogin();
@@ -1513,6 +1654,19 @@
       auditSearchTimer = setTimeout(() => filterAndRenderAuditLogs(), 200);
     });
     document.getElementById('auditLimitSelect').addEventListener('change', () => filterAndRenderAuditLogs());
+
+    // Quick action buttons
+    document.getElementById('quickScanBtn').addEventListener('click', () => {
+      const scanSection = document.getElementById('scanToolsContent');
+      if (scanSection.classList.contains('collapsed')) {
+        scanSection.classList.remove('collapsed');
+        document.getElementById('toggleScanTools').querySelector('.chevron-icon').classList.add('rotate-180');
+      }
+      document.getElementById('toggleScanTools').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    document.getElementById('quickSubnetsBtn').addEventListener('click', () => {
+      document.getElementById('subnetOverviewList').closest('section').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
 
     checkHealth();
   </script>
