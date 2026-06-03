@@ -64,9 +64,37 @@
     .btn-loading .btn-text { display: none; }
     .btn-loading .btn-spinner { display: inline-flex; }
     .btn-spinner { display: none; }
+    /* Sidebar styles */
+    .nk-sidebar { width: 3.5rem; transition: width 200ms ease; }
+    .nk-sidebar:hover { width: 14rem; }
+    .nk-sidebar .nav-label { opacity: 0; transition: opacity 150ms ease; white-space: nowrap; }
+    .nk-sidebar:hover .nav-label { opacity: 1; }
+    .nk-sidebar .nav-item { position: relative; }
+    .nk-sidebar .nav-item.active::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 0.25rem;
+      bottom: 0.25rem;
+      width: 3px;
+      border-radius: 0 4px 4px 0;
+      background: #0d9488;
+    }
+    /* View transitions */
+    .view-section { opacity: 0; transform: translateY(8px); transition: opacity 200ms ease, transform 200ms ease; display: none; }
+    .view-section.active { opacity: 1; transform: translateY(0); display: block; }
+    /* Skeleton pulse */
+    .skeleton { background: linear-gradient(90deg, #e2e8f0 25%, #f1f5f9 50%, #e2e8f0 75%); background-size: 200% 100%; animation: shimmer 1.5s infinite; border-radius: 0.5rem; }
+    @media (prefers-color-scheme: dark) {
+      .skeleton { background: linear-gradient(90deg, #334155 25%, #1e293b 50%, #334155 75%); background-size: 200% 100%; }
+    }
+    @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+    /* Shortcuts tooltip */
+    .shortcuts-tooltip { display: none; position: absolute; bottom: 100%; right: 0; margin-bottom: 0.5rem; }
+    .shortcuts-tooltip.show { display: block; }
   </style>
 </head>
-<body class="min-h-screen font-sans antialiased">
+<body class="h-screen overflow-hidden font-sans antialiased">
   <!-- Toast Container -->
   <div id="toastContainer" class="fixed top-4 right-4 z-[100] flex flex-col gap-2 pointer-events-none"></div>
 
@@ -97,6 +125,7 @@
       </form>
     </div>
   </div>
+
   <!-- Welcome Modal -->
   <div id="welcomeModal" class="fixed inset-0 z-[60] hidden items-center justify-center bg-slate-950/60 p-4 backdrop-blur-md">
     <div class="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-8 shadow-2xl dark:border-slate-700 dark:bg-slate-800">
@@ -155,337 +184,531 @@
     <div id="detailBody" class="p-6 grid gap-4"></div>
   </aside>
 
-  <!-- Dark Header/Nav -->
-  <header class="sticky top-0 z-30 bg-slate-900 border-b border-slate-800 shadow-lg">
-    <div class="mx-auto max-w-[1440px] px-4 sm:px-6 lg:px-8">
-      <div class="flex items-center justify-between h-14">
-        <div class="flex items-center gap-3">
-          <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-teal-600 text-white font-bold text-xs">NK</div>
-          <div>
-            <h1 class="text-sm font-semibold text-white leading-tight">Netking IPAM</h1>
-            <p class="text-[10px] text-slate-400 font-medium">Network Inventory Explorer</p>
-          </div>
-        </div>
-        <div class="flex items-center gap-3">
-          <div class="hidden sm:flex items-center gap-2 text-xs text-slate-400">
-            <span class="flex h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
-            <span id="apiStatus">Checking...</span>
-          </div>
-          <div id="authBadge" class="hidden sm:block text-[11px] text-slate-500 font-medium">Auth: pending</div>
-          <button id="quickScanBtn" type="button" class="hidden rounded-full bg-teal-600/20 border border-teal-500/40 px-3 py-1 text-[11px] font-medium text-teal-300 hover:bg-teal-600/30 transition-colors">Scan</button>
-          <button id="quickSubnetsBtn" type="button" class="hidden rounded-full bg-slate-700 border border-slate-600 px-3 py-1 text-[11px] font-medium text-slate-300 hover:bg-slate-600 transition-colors">Subnets</button>
-          <button id="logoutButton" class="hidden rounded-md bg-slate-800 border border-slate-700 px-3 py-1.5 text-[11px] font-medium text-slate-300 hover:bg-slate-700 transition-colors">Logout</button>
+  <!-- App Shell -->
+  <div class="flex h-screen overflow-hidden">
+    <!-- Sidebar -->
+    <aside class="nk-sidebar fixed h-full bg-slate-900 z-30 overflow-hidden flex flex-col border-r border-slate-800">
+      <!-- Logo -->
+      <div class="flex items-center gap-3 px-3 py-4 border-b border-slate-800 min-h-[3.5rem]">
+        <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-teal-600 text-white font-bold text-xs">NK</div>
+        <div class="nav-label">
+          <h1 class="text-sm font-semibold text-white leading-tight">Netking IPAM</h1>
+          <p class="text-[10px] text-slate-400 font-medium">Network Explorer</p>
         </div>
       </div>
-    </div>
-  </header>
-  <!-- Main Content -->
-  <div class="mx-auto max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8">
+      <!-- Nav Items -->
+      <nav class="flex-1 py-3 px-2 flex flex-col gap-1">
+        <button type="button" onclick="setActiveView('dashboard')" data-view="dashboard" class="nav-item active flex items-center gap-3 rounded-lg px-2 py-2.5 text-slate-300 hover:bg-slate-800 hover:text-white transition-colors w-full text-left">
+          <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
+          <span class="nav-label text-xs font-medium">Dashboard</span>
+        </button>
+        <button type="button" onclick="setActiveView('routers')" data-view="routers" class="nav-item flex items-center gap-3 rounded-lg px-2 py-2.5 text-slate-300 hover:bg-slate-800 hover:text-white transition-colors w-full text-left">
+          <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2"/></svg>
+          <span class="nav-label text-xs font-medium">Routers</span>
+        </button>
+        <button type="button" onclick="setActiveView('subnets')" data-view="subnets" class="nav-item flex items-center gap-3 rounded-lg px-2 py-2.5 text-slate-300 hover:bg-slate-800 hover:text-white transition-colors w-full text-left">
+          <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/></svg>
+          <span class="nav-label text-xs font-medium">Subnets</span>
+        </button>
+        <button type="button" onclick="setActiveView('audit')" data-view="audit" class="nav-item flex items-center gap-3 rounded-lg px-2 py-2.5 text-slate-300 hover:bg-slate-800 hover:text-white transition-colors w-full text-left">
+          <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/></svg>
+          <span class="nav-label text-xs font-medium">Audit</span>
+        </button>
+      </nav>
+    </aside>
 
-    <!-- Sub-header info bar -->
-    <div class="mb-6 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-      <div>
-        <p class="text-sm text-slate-600 dark:text-slate-400">Sinkronisasi data OLT dari bookmark browser, tarik pool MikroTik lewat IP WireGuard, lalu petakan relasinya secara otomatis.</p>
-      </div>
-      <div class="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-        <span id="lastScanInfo">Mode: Direct RouterOS REST API via WireGuard</span>
-      </div>
-    </div>
-
-    <!-- Summary Stat Cards -->
-    <section id="statCards" class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-      <div class="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800 border-l-4 border-l-blue-500">
-        <div class="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-50 dark:bg-blue-900/30">
-          <svg class="w-5 h-5 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2"/></svg>
-        </div>
-        <div>
-          <div id="statTotalRouters" class="text-lg font-bold text-slate-900 dark:text-white">-</div>
-          <div class="text-[11px] text-slate-500 dark:text-slate-400">Total Routers</div>
-        </div>
-      </div>
-      <div class="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800 border-l-4 border-l-emerald-500">
-        <div class="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-50 dark:bg-emerald-900/30">
-          <svg class="w-5 h-5 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-        </div>
-        <div>
-          <div id="statConnected" class="text-lg font-bold text-emerald-700 dark:text-emerald-400">-</div>
-          <div class="text-[11px] text-slate-500 dark:text-slate-400">Connected</div>
-        </div>
-      </div>
-      <div class="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800 border-l-4 border-l-red-500">
-        <div class="flex h-9 w-9 items-center justify-center rounded-lg bg-red-50 dark:bg-red-900/30">
-          <svg class="w-5 h-5 text-red-600 dark:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-        </div>
-        <div>
-          <div id="statError" class="text-lg font-bold text-red-700 dark:text-red-400">-</div>
-          <div class="text-[11px] text-slate-500 dark:text-slate-400">Error</div>
-        </div>
-      </div>
-      <div class="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800 border-l-4 border-l-teal-500">
-        <div class="flex h-9 w-9 items-center justify-center rounded-lg bg-teal-50 dark:bg-teal-900/30">
-          <svg class="w-5 h-5 text-teal-600 dark:text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>
-        </div>
-        <div>
-          <div id="statSubnets" class="text-lg font-bold text-teal-700 dark:text-teal-400">-</div>
-          <div class="text-[11px] text-slate-500 dark:text-slate-400">Subnets Defined</div>
-        </div>
-      </div>
-    </section>
-
-    <!-- Alert Banner -->
-    <section id="alertBanner" class="hidden grid gap-2 mb-6">
-      <!-- alerts rendered here by JS -->
-    </section>
-
-    <!-- Upload & Scan Section -->
-    <section class="rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800 mb-6">
-      <!-- Collapsible Header -->
-      <button type="button" id="toggleScanTools" onclick="document.getElementById('scanToolsContent').classList.toggle('collapsed'); this.querySelector('.chevron-icon').classList.toggle('rotate-180')" class="w-full flex items-center justify-between px-5 py-4 hover:bg-slate-50/50 dark:hover:bg-slate-700/20 transition-colors rounded-xl">
-        <div>
-          <h2 class="text-base font-semibold text-slate-900 dark:text-white text-left">Scan & Import Tools</h2>
-          <p class="mt-0.5 text-xs text-slate-500 dark:text-slate-400 text-left">Upload bookmark OLT, pindai router MikroTik via WireGuard, atau bulk scan.</p>
-        </div>
-        <svg class="chevron-icon w-5 h-5 text-slate-400 transition-transform rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
-      </button>
-      <div id="scanToolsContent" class="collapsible-content">
-    <div class="grid gap-5 xl:grid-cols-[0.9fr_1.1fr] px-5 pb-5">
-      <!-- Bookmark Upload Card -->
-      <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-        <h2 class="text-base font-semibold text-slate-900 dark:text-white">Panel Unggah Bookmark</h2>
-        <p class="mt-1.5 text-xs text-slate-500 dark:text-slate-400">Unggah file <code class="px-1 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-[11px]">bookmarks.html</code> untuk mengisi data master OLT dari hasil export browser.</p>
-        <form id="bookmarkForm" class="mt-4 space-y-3">
-          <div>
-            <label class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1.5">File Bookmark</label>
-            <input id="bookmarkFile" name="file" type="file" accept=".html,text/html" class="block w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-teal-50 file:px-3 file:py-1 file:text-xs file:font-medium file:text-teal-700 hover:file:bg-teal-100 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none dark:border-slate-600 dark:bg-slate-700 dark:text-white" />
-          </div>
-          <button type="submit" class="rounded-lg bg-teal-600 px-4 py-2 text-xs font-semibold text-white hover:bg-teal-700 transition-colors focus:ring-2 focus:ring-teal-500/40 focus:outline-none">
-            <span class="btn-spinner"><svg class="animate-spin h-3.5 w-3.5 mr-1.5 inline" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/></svg>Processing...</span>
-            <span class="btn-text">Sinkronkan Bookmark OLT</span>
-          </button>
-        </form>
-      </div>
-      <!-- Device Scan Card -->
-      <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-        <h2 class="text-base font-semibold text-slate-900 dark:text-white">Panel Pindai Perangkat</h2>
-        <p class="mt-1.5 text-xs text-slate-500 dark:text-slate-400">Masukkan IP remote WireGuard router MikroTik. Default access bisa disimpan dari dashboard.</p>
-
-        <!-- MikroTik Settings Sub-card (collapsed by default) -->
-        <div class="mt-4 rounded-lg border border-slate-200 bg-slate-50/80 dark:border-slate-600 dark:bg-slate-700/50 overflow-hidden">
-          <button type="button" onclick="document.getElementById('mikrotikSettingsBody').classList.toggle('collapsed'); this.querySelector('.chevron-icon').classList.toggle('rotate-180')" class="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-100/50 dark:hover:bg-slate-600/30 transition-colors">
-            <div class="flex items-center gap-3">
-              <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Default MikroTik Access</h3>
-              <div id="mikrotikSettingsBadge" class="shrink-0 rounded-md bg-slate-200 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-slate-600 dark:bg-slate-600 dark:text-slate-300">Not loaded</div>
-            </div>
-            <svg class="chevron-icon w-4 h-4 text-slate-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
-          </button>
-          <div id="mikrotikSettingsBody" class="collapsible-content collapsed">
-          <form id="mikrotikSettingsForm" class="px-4 pb-4">
-          <div class="grid gap-3 md:grid-cols-2">
-            <div>
-              <label class="block text-[11px] font-medium text-slate-500 dark:text-slate-400 mb-1">Username</label>
-              <input id="defaultRouterUsername" type="text" placeholder="Default username" class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none dark:border-slate-600 dark:bg-slate-700 dark:text-white" />
-            </div>
-            <div>
-              <label class="block text-[11px] font-medium text-slate-500 dark:text-slate-400 mb-1">Password</label>
-              <input id="defaultRouterPassword" type="password" placeholder="Default password baru (opsional)" class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none dark:border-slate-600 dark:bg-slate-700 dark:text-white" />
+    <!-- Main Content Area -->
+    <main class="ml-14 flex-1 flex flex-col overflow-hidden">
+      <!-- Top Header -->
+      <header class="sticky top-0 z-20 bg-white border-b border-slate-200 dark:bg-slate-800 dark:border-slate-700 shadow-sm">
+        <div class="flex items-center justify-between h-14 px-6">
+          <div class="flex items-center gap-4">
+            <h2 id="viewTitle" class="text-base font-semibold text-slate-900 dark:text-white">Dashboard</h2>
+            <div class="hidden sm:flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+              <span class="flex h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
+              <span id="apiStatus">Checking...</span>
             </div>
           </div>
-          <label class="mt-3 flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400 cursor-pointer">
-            <input id="clearDefaultRouterPassword" type="checkbox" class="h-3.5 w-3.5 rounded border-slate-300 text-teal-600 focus:ring-teal-500 dark:border-slate-600" />
-            Hapus password default yang tersimpan
-          </label>
-          <button id="saveMikrotikSettingsButton" type="submit" class="mt-3 rounded-lg border border-teal-600 px-3.5 py-1.5 text-xs font-semibold text-teal-700 hover:bg-teal-50 transition-colors dark:border-teal-500 dark:text-teal-400 dark:hover:bg-teal-900/30">
-            <span class="btn-spinner"><svg class="animate-spin h-3.5 w-3.5 mr-1.5 inline" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/></svg>Saving...</span>
-            <span class="btn-text">Simpan Default Access</span>
-          </button>
-        </form>
+          <div class="flex items-center gap-3">
+            <!-- Auto-refresh indicator -->
+            <div id="autoRefreshIndicator" class="flex items-center gap-2">
+              <span class="text-[10px] font-medium text-emerald-600 dark:text-emerald-400">Auto-refresh: ON</span>
+              <button type="button" id="toggleAutoRefresh" class="relative h-5 w-9 rounded-full bg-emerald-500 transition-colors" title="Toggle auto-refresh">
+                <span class="absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform translate-x-4"></span>
+              </button>
+            </div>
+            <div id="authBadge" class="hidden sm:block text-[11px] text-slate-500 font-medium">Auth: pending</div>
+            <button id="quickScanBtn" type="button" class="hidden rounded-full bg-teal-600/20 border border-teal-500/40 px-3 py-1 text-[11px] font-medium text-teal-600 dark:text-teal-300 hover:bg-teal-600/30 transition-colors">Scan</button>
+            <button id="quickSubnetsBtn" type="button" class="hidden rounded-full bg-slate-100 border border-slate-300 px-3 py-1 text-[11px] font-medium text-slate-600 dark:bg-slate-700 dark:border-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors">Subnets</button>
+            <button id="logoutButton" class="hidden rounded-md bg-slate-100 border border-slate-300 px-3 py-1.5 text-[11px] font-medium text-slate-600 hover:bg-slate-200 transition-colors dark:bg-slate-700 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-600">Logout</button>
           </div>
         </div>
-        <!-- Single Scan Form -->
-        <form id="scanForm" class="mt-4 grid gap-3">
-          <div>
-            <label class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Nama Perangkat</label>
-            <input id="deviceName" type="text" placeholder="Nama perangkat opsional" class="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none dark:border-slate-600 dark:bg-slate-700 dark:text-white" />
-          </div>
-          <div>
-            <label class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">IP WireGuard <span class="text-red-500">*</span></label>
-            <input id="wireguardIp" type="text" placeholder="Contoh: 10.10.50.1" class="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none dark:border-slate-600 dark:bg-slate-700 dark:text-white" required />
-          </div>
-          <div class="grid gap-3 md:grid-cols-2">
+      </header>
+
+      <!-- Scrollable Content -->
+      <div class="flex-1 overflow-y-auto p-6">
+
+        <!-- ===== DASHBOARD VIEW ===== -->
+        <div id="view-dashboard" class="view-section active">
+          <!-- Sub-header info bar -->
+          <div class="mb-6 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <label class="block text-[11px] font-medium text-slate-500 dark:text-slate-400 mb-1">Username (override)</label>
-              <input id="routerUsername" type="text" placeholder="Username router opsional" class="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none dark:border-slate-600 dark:bg-slate-700 dark:text-white" />
+              <p class="text-sm text-slate-600 dark:text-slate-400">Sinkronisasi data OLT dari bookmark browser, tarik pool MikroTik lewat IP WireGuard, lalu petakan relasinya secara otomatis.</p>
             </div>
-            <div>
-              <label class="block text-[11px] font-medium text-slate-500 dark:text-slate-400 mb-1">Password (override)</label>
-              <input id="routerPassword" type="password" placeholder="Password router opsional" class="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none dark:border-slate-600 dark:bg-slate-700 dark:text-white" />
+            <div class="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+              <span id="lastScanInfo">Mode: Direct RouterOS REST API via WireGuard</span>
             </div>
           </div>
-          <button id="scanButton" type="submit" class="rounded-lg bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800 transition-colors focus:ring-2 focus:ring-slate-500/40 focus:outline-none dark:bg-slate-600 dark:hover:bg-slate-500">
-            <span class="btn-spinner"><svg class="animate-spin h-3.5 w-3.5 mr-1.5 inline" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/></svg>Scanning...</span>
-            <span class="btn-text">Tarik Data Router</span>
-          </button>
-        </form>
-        <!-- Bulk Scan (collapsed by default) -->
-        <div class="mt-4 rounded-lg border border-slate-200 bg-slate-50/70 dark:border-slate-600 dark:bg-slate-700/50 overflow-hidden">
-          <button type="button" onclick="document.getElementById('bulkScanBody').classList.toggle('collapsed'); this.querySelector('.chevron-icon').classList.toggle('rotate-180')" class="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-100/50 dark:hover:bg-slate-600/30 transition-colors">
-            <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Bulk Scan</h3>
-            <svg class="chevron-icon w-4 h-4 text-slate-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
-          </button>
-          <div id="bulkScanBody" class="collapsible-content collapsed">
-          <div class="px-4 pb-4">
-          <p class="mt-1 text-[11px] text-slate-500 dark:text-slate-400">Format per baris: <code class="px-1 py-0.5 rounded bg-slate-200 dark:bg-slate-600 text-[10px]">ip|nama|username|password</code> (hanya IP wajib diisi)</p>
-          <form id="bulkScanForm" class="mt-3 grid gap-3">
-            <textarea id="bulkScanInput" rows="4" placeholder="10.10.50.1|MK-JKT-01|admin|secret&#10;10.10.50.2|MK-BDG-01&#10;10.10.50.3" class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-mono focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none dark:border-slate-600 dark:bg-slate-700 dark:text-white"></textarea>
-            <div>
-              <p class="text-[11px] text-slate-500 dark:text-slate-400 mb-1.5">Atau muat dari file:</p>
-              <div class="flex flex-col gap-2 sm:flex-row">
-                <input id="bulkFile" type="file" accept=".txt,.csv,text/plain,text/csv" class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none dark:border-slate-600 dark:bg-slate-700 dark:text-white" />
-                <button id="loadBulkFile" type="button" class="shrink-0 rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition-colors dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700">Muat File</button>
+
+          <!-- Summary Stat Cards -->
+          <section id="statCards" class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+            <div class="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800 border-l-4 border-l-blue-500">
+              <div class="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-50 dark:bg-blue-900/30">
+                <svg class="w-5 h-5 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2"/></svg>
+              </div>
+              <div>
+                <div id="statTotalRouters" class="text-lg font-bold text-slate-900 dark:text-white">-</div>
+                <div class="text-[11px] text-slate-500 dark:text-slate-400">Total Routers</div>
               </div>
             </div>
-            <button id="bulkScanButton" type="submit" class="rounded-lg border border-teal-600 px-4 py-2 text-xs font-semibold text-teal-700 hover:bg-teal-50 transition-colors dark:border-teal-500 dark:text-teal-400 dark:hover:bg-teal-900/30">
-              <span class="btn-spinner"><svg class="animate-spin h-3.5 w-3.5 mr-1.5 inline" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/></svg>Running...</span>
-              <span class="btn-text">Jalankan Bulk Scan</span>
-            </button>
-          </form>
-          </div>
-          </div>
+            <div class="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800 border-l-4 border-l-emerald-500">
+              <div class="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-50 dark:bg-emerald-900/30">
+                <svg class="w-5 h-5 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+              </div>
+              <div>
+                <div id="statConnected" class="text-lg font-bold text-emerald-700 dark:text-emerald-400">-</div>
+                <div class="text-[11px] text-slate-500 dark:text-slate-400">Connected</div>
+              </div>
+            </div>
+            <div class="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800 border-l-4 border-l-red-500">
+              <div class="flex h-9 w-9 items-center justify-center rounded-lg bg-red-50 dark:bg-red-900/30">
+                <svg class="w-5 h-5 text-red-600 dark:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+              </div>
+              <div>
+                <div id="statError" class="text-lg font-bold text-red-700 dark:text-red-400">-</div>
+                <div class="text-[11px] text-slate-500 dark:text-slate-400">Error</div>
+              </div>
+            </div>
+            <div class="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800 border-l-4 border-l-teal-500">
+              <div class="flex h-9 w-9 items-center justify-center rounded-lg bg-teal-50 dark:bg-teal-900/30">
+                <svg class="w-5 h-5 text-teal-600 dark:text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>
+              </div>
+              <div>
+                <div id="statSubnets" class="text-lg font-bold text-teal-700 dark:text-teal-400">-</div>
+                <div class="text-[11px] text-slate-500 dark:text-slate-400">Subnets Defined</div>
+              </div>
+            </div>
+          </section>
+
+          <!-- Skeleton for stat cards (shown on load) -->
+          <section id="statCardsSkeleton" class="hidden grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+            <div class="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800"><div class="skeleton h-9 w-full mb-2"></div><div class="skeleton h-3 w-20"></div></div>
+            <div class="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800"><div class="skeleton h-9 w-full mb-2"></div><div class="skeleton h-3 w-20"></div></div>
+            <div class="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800"><div class="skeleton h-9 w-full mb-2"></div><div class="skeleton h-3 w-20"></div></div>
+            <div class="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800"><div class="skeleton h-9 w-full mb-2"></div><div class="skeleton h-3 w-20"></div></div>
+          </section>
+
+          <!-- Alert Banner -->
+          <section id="alertBanner" class="hidden grid gap-2 mb-6">
+            <!-- alerts rendered here by JS -->
+          </section>
+
+          <!-- Data Explorer in Dashboard (overview) -->
+          <section class="rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800">
+            <div class="p-5 border-b border-slate-200 dark:border-slate-700">
+              <div class="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+                <div>
+                  <h2 class="text-base font-semibold text-slate-900 dark:text-white">Data Explorer</h2>
+                </div>
+                <div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+                  <input id="searchInput" type="search" placeholder="Cari nama, IP WG, OLT..." class="rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-xs focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none sm:w-56 dark:border-slate-600 dark:bg-slate-700 dark:text-white" />
+                  <select id="statusFilter" class="rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-xs focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none dark:border-slate-600 dark:bg-slate-700 dark:text-white">
+                    <option value="all">Semua Status</option>
+                    <option value="connected">Connected</option>
+                    <option value="error">Error</option>
+                    <option value="unmapped">Unmapped</option>
+                    <option value="unknown">Unknown</option>
+                  </select>
+                  <select id="sortSelect" class="rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-xs focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none dark:border-slate-600 dark:bg-slate-700 dark:text-white">
+                    <option value="last_scanned_at:desc">Last Scanned Terbaru</option>
+                    <option value="device_name:asc">Nama A-Z</option>
+                    <option value="wireguard_ip:asc">IP WG A-Z</option>
+                    <option value="status:asc">Status</option>
+                    <option value="olt:asc">OLT</option>
+                  </select>
+                  <select id="perPageSelect" class="rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-xs focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none dark:border-slate-600 dark:bg-slate-700 dark:text-white">
+                    <option value="10">10 / page</option>
+                    <option value="20" selected>20 / page</option>
+                    <option value="50">50 / page</option>
+                  </select>
+                  <div class="flex items-center gap-1.5">
+                    <button id="exportCsv" class="rounded-md border border-slate-300 px-2.5 py-1.5 text-[11px] font-medium text-slate-600 hover:bg-slate-50 transition-colors dark:border-slate-600 dark:text-slate-400 dark:hover:bg-slate-700">CSV</button>
+                    <button id="exportExcel" class="rounded-md border border-emerald-300 px-2.5 py-1.5 text-[11px] font-medium text-emerald-700 hover:bg-emerald-50 transition-colors dark:border-emerald-600 dark:text-emerald-400 dark:hover:bg-emerald-900/30">Excel</button>
+                    <button id="exportPdf" class="rounded-md border border-red-300 px-2.5 py-1.5 text-[11px] font-medium text-red-700 hover:bg-red-50 transition-colors dark:border-red-600 dark:text-red-400 dark:hover:bg-red-900/30">PDF</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div id="flashMessage" class="mx-5 mt-4 hidden rounded-lg px-4 py-2.5 text-xs font-medium"></div>
+
+            <!-- Table Skeleton -->
+            <div id="tableSkeleton" class="hidden p-5 space-y-3">
+              <div class="skeleton h-8 w-full"></div>
+              <div class="skeleton h-8 w-full"></div>
+              <div class="skeleton h-8 w-full"></div>
+              <div class="skeleton h-8 w-full"></div>
+              <div class="skeleton h-8 w-full"></div>
+            </div>
+
+            <!-- Table -->
+            <div class="table-scroll overflow-x-auto max-h-[600px] overflow-y-auto">
+              <table class="min-w-full">
+                <thead class="bg-slate-50 dark:bg-slate-700/50 border-b border-slate-200 dark:border-slate-600">
+                  <tr class="text-left text-[11px] uppercase tracking-wider font-semibold text-slate-500 dark:text-slate-400">
+                    <th class="px-4 py-3 w-[180px]">Nama Perangkat</th>
+                    <th class="px-4 py-3 w-[130px]">IP WireGuard</th>
+                    <th class="px-4 py-3 w-[80px]">Auth</th>
+                    <th class="px-4 py-3 w-[180px]">OLT Mapping</th>
+                    <th class="px-4 py-3 w-[160px]">IP Pool</th>
+                    <th class="px-4 py-3 w-[100px]">Status</th>
+                    <th class="px-4 py-3 w-[200px]">Aksi</th>
+                  </tr>
+                </thead>
+                <tbody id="tableBody" class="divide-y divide-slate-100 dark:divide-slate-700 bg-white dark:bg-slate-800"></tbody>
+              </table>
+            </div>
+
+            <!-- Pagination -->
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between px-5 py-4 border-t border-slate-200 dark:border-slate-700">
+              <div id="paginationInfo" class="text-xs text-slate-500 dark:text-slate-400">-</div>
+              <div class="flex items-center gap-1.5">
+                <button id="prevPage" class="rounded-full border border-slate-300 px-3.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700">← Prev</button>
+                <div id="pageLabel" class="px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 rounded-full dark:bg-slate-700 dark:text-slate-300">Page 1</div>
+                <button id="nextPage" class="rounded-full border border-slate-300 px-3.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700">Next →</button>
+              </div>
+            </div>
+          </section>
         </div>
-      </div>
-    </div>
-      </div>
-    </section>
-    <!-- Data Explorer Section -->
-    <section class="rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800 mb-6">
-      <div class="p-5 border-b border-slate-200 dark:border-slate-700">
-        <div class="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-          <div>
-            <h2 class="text-base font-semibold text-slate-900 dark:text-white">Data Explorer</h2>
-          </div>
-          <div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-            <input id="searchInput" type="search" placeholder="Cari nama, IP WG, OLT..." class="rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-xs focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none sm:w-56 dark:border-slate-600 dark:bg-slate-700 dark:text-white" />
-            <select id="statusFilter" class="rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-xs focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none dark:border-slate-600 dark:bg-slate-700 dark:text-white">
-              <option value="all">Semua Status</option>
-              <option value="connected">Connected</option>
-              <option value="error">Error</option>
-              <option value="unmapped">Unmapped</option>
-              <option value="unknown">Unknown</option>
-            </select>
-            <select id="sortSelect" class="rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-xs focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none dark:border-slate-600 dark:bg-slate-700 dark:text-white">
-              <option value="last_scanned_at:desc">Last Scanned Terbaru</option>
-              <option value="device_name:asc">Nama A-Z</option>
-              <option value="wireguard_ip:asc">IP WG A-Z</option>
-              <option value="status:asc">Status</option>
-              <option value="olt:asc">OLT</option>
-            </select>
-            <select id="perPageSelect" class="rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-xs focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none dark:border-slate-600 dark:bg-slate-700 dark:text-white">
-              <option value="10">10 / page</option>
-              <option value="20" selected>20 / page</option>
-              <option value="50">50 / page</option>
-            </select>
-            <div class="flex items-center gap-1.5">
-              <button id="exportCsv" class="rounded-md border border-slate-300 px-2.5 py-1.5 text-[11px] font-medium text-slate-600 hover:bg-slate-50 transition-colors dark:border-slate-600 dark:text-slate-400 dark:hover:bg-slate-700">CSV</button>
-              <button id="exportExcel" class="rounded-md border border-emerald-300 px-2.5 py-1.5 text-[11px] font-medium text-emerald-700 hover:bg-emerald-50 transition-colors dark:border-emerald-600 dark:text-emerald-400 dark:hover:bg-emerald-900/30">Excel</button>
-              <button id="exportPdf" class="rounded-md border border-red-300 px-2.5 py-1.5 text-[11px] font-medium text-red-700 hover:bg-red-50 transition-colors dark:border-red-600 dark:text-red-400 dark:hover:bg-red-900/30">PDF</button>
+
+        <!-- ===== ROUTERS VIEW ===== -->
+        <div id="view-routers" class="view-section">
+          <!-- Upload & Scan Section -->
+          <section class="rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800 mb-6">
+            <!-- Collapsible Header -->
+            <button type="button" id="toggleScanTools" onclick="document.getElementById('scanToolsContent').classList.toggle('collapsed'); this.querySelector('.chevron-icon').classList.toggle('rotate-180')" class="w-full flex items-center justify-between px-5 py-4 hover:bg-slate-50/50 dark:hover:bg-slate-700/20 transition-colors rounded-xl">
+              <div>
+                <h2 class="text-base font-semibold text-slate-900 dark:text-white text-left">Scan & Import Tools</h2>
+                <p class="mt-0.5 text-xs text-slate-500 dark:text-slate-400 text-left">Upload bookmark OLT, pindai router MikroTik via WireGuard, atau bulk scan.</p>
+              </div>
+              <svg class="chevron-icon w-5 h-5 text-slate-400 transition-transform rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+            </button>
+            <div id="scanToolsContent" class="collapsible-content">
+              <div class="grid gap-5 xl:grid-cols-[0.9fr_1.1fr] px-5 pb-5">
+                <!-- Bookmark Upload Card -->
+                <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+                  <h2 class="text-base font-semibold text-slate-900 dark:text-white">Panel Unggah Bookmark</h2>
+                  <p class="mt-1.5 text-xs text-slate-500 dark:text-slate-400">Unggah file <code class="px-1 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-[11px]">bookmarks.html</code> untuk mengisi data master OLT dari hasil export browser.</p>
+                  <form id="bookmarkForm" class="mt-4 space-y-3">
+                    <div>
+                      <label class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1.5">File Bookmark</label>
+                      <input id="bookmarkFile" name="file" type="file" accept=".html,text/html" class="block w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-teal-50 file:px-3 file:py-1 file:text-xs file:font-medium file:text-teal-700 hover:file:bg-teal-100 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none dark:border-slate-600 dark:bg-slate-700 dark:text-white" />
+                    </div>
+                    <button type="submit" class="rounded-lg bg-teal-600 px-4 py-2 text-xs font-semibold text-white hover:bg-teal-700 transition-colors focus:ring-2 focus:ring-teal-500/40 focus:outline-none">
+                      <span class="btn-spinner"><svg class="animate-spin h-3.5 w-3.5 mr-1.5 inline" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/></svg>Processing...</span>
+                      <span class="btn-text">Sinkronkan Bookmark OLT</span>
+                    </button>
+                  </form>
+                </div>
+                <!-- Device Scan Card -->
+                <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+                  <h2 class="text-base font-semibold text-slate-900 dark:text-white">Panel Pindai Perangkat</h2>
+                  <p class="mt-1.5 text-xs text-slate-500 dark:text-slate-400">Masukkan IP remote WireGuard router MikroTik. Default access bisa disimpan dari dashboard.</p>
+
+                  <!-- MikroTik Settings Sub-card -->
+                  <div class="mt-4 rounded-lg border border-slate-200 bg-slate-50/80 dark:border-slate-600 dark:bg-slate-700/50 overflow-hidden">
+                    <button type="button" onclick="document.getElementById('mikrotikSettingsBody').classList.toggle('collapsed'); this.querySelector('.chevron-icon').classList.toggle('rotate-180')" class="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-100/50 dark:hover:bg-slate-600/30 transition-colors">
+                      <div class="flex items-center gap-3">
+                        <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Default MikroTik Access</h3>
+                        <div id="mikrotikSettingsBadge" class="shrink-0 rounded-md bg-slate-200 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-slate-600 dark:bg-slate-600 dark:text-slate-300">Not loaded</div>
+                      </div>
+                      <svg class="chevron-icon w-4 h-4 text-slate-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                    </button>
+                    <div id="mikrotikSettingsBody" class="collapsible-content collapsed">
+                      <form id="mikrotikSettingsForm" class="px-4 pb-4">
+                        <div class="grid gap-3 md:grid-cols-2">
+                          <div>
+                            <label class="block text-[11px] font-medium text-slate-500 dark:text-slate-400 mb-1">Username</label>
+                            <input id="defaultRouterUsername" type="text" placeholder="Default username" class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none dark:border-slate-600 dark:bg-slate-700 dark:text-white" />
+                          </div>
+                          <div>
+                            <label class="block text-[11px] font-medium text-slate-500 dark:text-slate-400 mb-1">Password</label>
+                            <input id="defaultRouterPassword" type="password" placeholder="Default password baru (opsional)" class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none dark:border-slate-600 dark:bg-slate-700 dark:text-white" />
+                          </div>
+                        </div>
+                        <label class="mt-3 flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400 cursor-pointer">
+                          <input id="clearDefaultRouterPassword" type="checkbox" class="h-3.5 w-3.5 rounded border-slate-300 text-teal-600 focus:ring-teal-500 dark:border-slate-600" />
+                          Hapus password default yang tersimpan
+                        </label>
+                        <button id="saveMikrotikSettingsButton" type="submit" class="mt-3 rounded-lg border border-teal-600 px-3.5 py-1.5 text-xs font-semibold text-teal-700 hover:bg-teal-50 transition-colors dark:border-teal-500 dark:text-teal-400 dark:hover:bg-teal-900/30">
+                          <span class="btn-spinner"><svg class="animate-spin h-3.5 w-3.5 mr-1.5 inline" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/></svg>Saving...</span>
+                          <span class="btn-text">Simpan Default Access</span>
+                        </button>
+                      </form>
+                    </div>
+                  </div>
+
+                  <!-- Single Scan Form -->
+                  <form id="scanForm" class="mt-4 grid gap-3">
+                    <div>
+                      <label class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Nama Perangkat</label>
+                      <input id="deviceName" type="text" placeholder="Nama perangkat opsional" class="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none dark:border-slate-600 dark:bg-slate-700 dark:text-white" />
+                    </div>
+                    <div>
+                      <label class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">IP WireGuard <span class="text-red-500">*</span></label>
+                      <input id="wireguardIp" type="text" placeholder="Contoh: 10.10.50.1" class="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none dark:border-slate-600 dark:bg-slate-700 dark:text-white" required />
+                    </div>
+                    <div class="grid gap-3 md:grid-cols-2">
+                      <div>
+                        <label class="block text-[11px] font-medium text-slate-500 dark:text-slate-400 mb-1">Username (override)</label>
+                        <input id="routerUsername" type="text" placeholder="Username router opsional" class="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none dark:border-slate-600 dark:bg-slate-700 dark:text-white" />
+                      </div>
+                      <div>
+                        <label class="block text-[11px] font-medium text-slate-500 dark:text-slate-400 mb-1">Password (override)</label>
+                        <input id="routerPassword" type="password" placeholder="Password router opsional" class="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none dark:border-slate-600 dark:bg-slate-700 dark:text-white" />
+                      </div>
+                    </div>
+                    <button id="scanButton" type="submit" class="rounded-lg bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800 transition-colors focus:ring-2 focus:ring-slate-500/40 focus:outline-none dark:bg-slate-600 dark:hover:bg-slate-500">
+                      <span class="btn-spinner"><svg class="animate-spin h-3.5 w-3.5 mr-1.5 inline" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/></svg>Scanning...</span>
+                      <span class="btn-text">Tarik Data Router</span>
+                    </button>
+                  </form>
+
+                  <!-- Bulk Scan -->
+                  <div class="mt-4 rounded-lg border border-slate-200 bg-slate-50/70 dark:border-slate-600 dark:bg-slate-700/50 overflow-hidden">
+                    <button type="button" onclick="document.getElementById('bulkScanBody').classList.toggle('collapsed'); this.querySelector('.chevron-icon').classList.toggle('rotate-180')" class="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-100/50 dark:hover:bg-slate-600/30 transition-colors">
+                      <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Bulk Scan</h3>
+                      <svg class="chevron-icon w-4 h-4 text-slate-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                    </button>
+                    <div id="bulkScanBody" class="collapsible-content collapsed">
+                      <div class="px-4 pb-4">
+                        <p class="mt-1 text-[11px] text-slate-500 dark:text-slate-400">Format per baris: <code class="px-1 py-0.5 rounded bg-slate-200 dark:bg-slate-600 text-[10px]">ip|nama|username|password</code> (hanya IP wajib diisi)</p>
+                        <form id="bulkScanForm" class="mt-3 grid gap-3">
+                          <textarea id="bulkScanInput" rows="4" placeholder="10.10.50.1|MK-JKT-01|admin|secret&#10;10.10.50.2|MK-BDG-01&#10;10.10.50.3" class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-mono focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none dark:border-slate-600 dark:bg-slate-700 dark:text-white"></textarea>
+                          <div>
+                            <p class="text-[11px] text-slate-500 dark:text-slate-400 mb-1.5">Atau muat dari file:</p>
+                            <div class="flex flex-col gap-2 sm:flex-row">
+                              <input id="bulkFile" type="file" accept=".txt,.csv,text/plain,text/csv" class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none dark:border-slate-600 dark:bg-slate-700 dark:text-white" />
+                              <button id="loadBulkFile" type="button" class="shrink-0 rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition-colors dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700">Muat File</button>
+                            </div>
+                          </div>
+                          <button id="bulkScanButton" type="submit" class="rounded-lg border border-teal-600 px-4 py-2 text-xs font-semibold text-teal-700 hover:bg-teal-50 transition-colors dark:border-teal-500 dark:text-teal-400 dark:hover:bg-teal-900/30">
+                            <span class="btn-spinner"><svg class="animate-spin h-3.5 w-3.5 mr-1.5 inline" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/></svg>Running...</span>
+                            <span class="btn-text">Jalankan Bulk Scan</span>
+                          </button>
+                        </form>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <!-- ===== SUBNETS VIEW ===== -->
+        <div id="view-subnets" class="view-section">
+          <section class="rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800 mb-6">
+            <div class="p-5 border-b border-slate-200 dark:border-slate-700">
+              <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h2 class="text-base font-semibold text-slate-900 dark:text-white">Subnet Overview</h2>
+                  <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Visualisasi utilisasi IP per subnet yang didefinisikan.</p>
+                </div>
+              </div>
+              <!-- Add Subnet Form -->
+              <form id="addSubnetForm" class="mt-4 flex flex-col gap-2 sm:flex-row sm:items-end">
+                <div class="flex-1">
+                  <label class="block text-[11px] font-medium text-slate-500 dark:text-slate-400 mb-1">CIDR</label>
+                  <input id="subnetCidrInput" type="text" placeholder="192.168.1.0/24" class="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-xs font-mono focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none dark:border-slate-600 dark:bg-slate-700 dark:text-white" />
+                </div>
+                <div class="flex-1">
+                  <label class="block text-[11px] font-medium text-slate-500 dark:text-slate-400 mb-1">Label</label>
+                  <input id="subnetLabelInput" type="text" placeholder="Customer subnet" class="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-xs focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none dark:border-slate-600 dark:bg-slate-700 dark:text-white" />
+                </div>
+                <button type="submit" class="shrink-0 rounded-lg bg-teal-600 px-4 py-2 text-xs font-semibold text-white hover:bg-teal-700 transition-colors focus:ring-2 focus:ring-teal-500/40 focus:outline-none">Add Subnet</button>
+              </form>
+            </div>
+
+            <!-- Subnet Skeleton -->
+            <div id="subnetSkeleton" class="hidden p-5 space-y-3">
+              <div class="skeleton h-12 w-full"></div>
+              <div class="skeleton h-12 w-full"></div>
+              <div class="skeleton h-12 w-full"></div>
+            </div>
+
+            <!-- Subnet List -->
+            <div id="subnetOverviewList" class="p-5 grid gap-3">
+              <div class="text-xs text-slate-500 dark:text-slate-400">Loading subnet data...</div>
+            </div>
+            <!-- Suggestions -->
+            <div class="border-t border-slate-200 dark:border-slate-700 px-5 py-3">
+              <button type="button" id="toggleSuggestionsBtn" onclick="var sec = document.getElementById('subnetSuggestionsSection'); var isHidden = sec.classList.contains('hidden'); sec.classList.toggle('hidden'); this.innerHTML = isHidden ? '▼ Hide auto-detected subnets' : '▶ Auto-detect subnets from scanned data';" class="text-xs font-medium text-teal-600 hover:text-teal-700 dark:text-teal-400 dark:hover:text-teal-300">
+                ▶ Auto-detect subnets from scanned data
+              </button>
+              <div id="subnetSuggestionsSection" class="hidden mt-3">
+                <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-3">Suggestions</h3>
+                <div id="subnetSuggestionsList" class="grid gap-2"></div>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <!-- ===== AUDIT VIEW ===== -->
+        <div id="view-audit" class="view-section">
+          <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+            <div class="flex items-center justify-between mb-4">
+              <div>
+                <h2 class="text-base font-semibold text-slate-900 dark:text-white">Audit Activity</h2>
+                <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Aktivitas terbaru dari dashboard dan API.</p>
+              </div>
+              <button type="button" id="toggleAuditBtn" onclick="var content = document.getElementById('auditContent'); var isHidden = content.classList.contains('hidden'); content.classList.toggle('hidden'); this.textContent = isHidden ? '▼ Hide audit activity' : '▶ Show audit activity (' + state.auditLogs.length + ')';" class="text-xs font-medium text-teal-600 hover:text-teal-700 dark:text-teal-400 dark:hover:text-teal-300">
+                ▶ Show audit activity
+              </button>
+            </div>
+            <div id="auditContent" class="hidden">
+              <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end mb-3">
+                <input id="auditSearchInput" type="search" placeholder="Cari action, actor, target..." class="rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-xs focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none sm:w-48 dark:border-slate-600 dark:bg-slate-700 dark:text-white" />
+                <select id="auditLimitSelect" class="rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-xs focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none dark:border-slate-600 dark:bg-slate-700 dark:text-white">
+                  <option value="20">Last 20</option>
+                  <option value="50">Last 50</option>
+                  <option value="100" selected>Last 100</option>
+                </select>
+              </div>
+              <div id="auditLogList" class="grid gap-2"></div>
+            </div>
+          </section>
+        </div>
+
+      </div><!-- end scrollable content -->
+
+      <!-- Footer with shortcuts -->
+      <div class="border-t border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-6 py-2 flex items-center justify-between">
+        <span class="text-[10px] text-slate-400 dark:text-slate-500">Netking IPAM v1.0</span>
+        <div class="relative">
+          <button type="button" id="shortcutsBtn" class="text-[10px] text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 flex items-center gap-1">
+            ⌨️ Shortcuts
+          </button>
+          <div id="shortcutsTooltip" class="shortcuts-tooltip w-56 rounded-lg border border-slate-200 bg-white p-3 shadow-lg dark:border-slate-700 dark:bg-slate-800 text-[11px] text-slate-600 dark:text-slate-300">
+            <div class="font-semibold text-slate-800 dark:text-white mb-2">Keyboard Shortcuts</div>
+            <div class="grid gap-1.5">
+              <div class="flex justify-between"><span>Focus search</span><kbd class="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-700 rounded text-[10px] font-mono">Ctrl+K</kbd></div>
+              <div class="flex justify-between"><span>Focus search</span><kbd class="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-700 rounded text-[10px] font-mono">/</kbd></div>
+              <div class="flex justify-between"><span>Close drawer</span><kbd class="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-700 rounded text-[10px] font-mono">Esc</kbd></div>
             </div>
           </div>
         </div>
       </div>
-
-      <div id="flashMessage" class="mx-5 mt-4 hidden rounded-lg px-4 py-2.5 text-xs font-medium"></div>
-      <!-- Table -->
-      <div class="table-scroll overflow-x-auto max-h-[600px] overflow-y-auto">
-        <table class="min-w-full">
-          <thead class="bg-slate-50 dark:bg-slate-700/50 border-b border-slate-200 dark:border-slate-600">
-            <tr class="text-left text-[11px] uppercase tracking-wider font-semibold text-slate-500 dark:text-slate-400">
-              <th class="px-4 py-3 w-[180px]">Nama Perangkat</th>
-              <th class="px-4 py-3 w-[130px]">IP WireGuard</th>
-              <th class="px-4 py-3 w-[80px]">Auth</th>
-              <th class="px-4 py-3 w-[180px]">OLT Mapping</th>
-              <th class="px-4 py-3 w-[160px]">IP Pool</th>
-              <th class="px-4 py-3 w-[100px]">Status</th>
-              <th class="px-4 py-3 w-[200px]">Aksi</th>
-            </tr>
-          </thead>
-          <tbody id="tableBody" class="divide-y divide-slate-100 dark:divide-slate-700 bg-white dark:bg-slate-800"></tbody>
-        </table>
-      </div>
-
-      <!-- Pagination -->
-      <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between px-5 py-4 border-t border-slate-200 dark:border-slate-700">
-        <div id="paginationInfo" class="text-xs text-slate-500 dark:text-slate-400">-</div>
-        <div class="flex items-center gap-1.5">
-          <button id="prevPage" class="rounded-full border border-slate-300 px-3.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700">← Prev</button>
-          <div id="pageLabel" class="px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 rounded-full dark:bg-slate-700 dark:text-slate-300">Page 1</div>
-          <button id="nextPage" class="rounded-full border border-slate-300 px-3.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700">Next →</button>
-        </div>
-      </div>
-    </section>
-    <!-- Subnet Overview Section -->
-    <section class="rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800 mb-6">
-      <div class="p-5 border-b border-slate-200 dark:border-slate-700">
-        <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h2 class="text-base font-semibold text-slate-900 dark:text-white">Subnet Overview</h2>
-            <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Visualisasi utilisasi IP per subnet yang didefinisikan.</p>
-          </div>
-        </div>
-        <!-- Add Subnet Form -->
-        <form id="addSubnetForm" class="mt-4 flex flex-col gap-2 sm:flex-row sm:items-end">
-          <div class="flex-1">
-            <label class="block text-[11px] font-medium text-slate-500 dark:text-slate-400 mb-1">CIDR</label>
-            <input id="subnetCidrInput" type="text" placeholder="192.168.1.0/24" class="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-xs font-mono focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none dark:border-slate-600 dark:bg-slate-700 dark:text-white" />
-          </div>
-          <div class="flex-1">
-            <label class="block text-[11px] font-medium text-slate-500 dark:text-slate-400 mb-1">Label</label>
-            <input id="subnetLabelInput" type="text" placeholder="Customer subnet" class="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-xs focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none dark:border-slate-600 dark:bg-slate-700 dark:text-white" />
-          </div>
-          <button type="submit" class="shrink-0 rounded-lg bg-teal-600 px-4 py-2 text-xs font-semibold text-white hover:bg-teal-700 transition-colors focus:ring-2 focus:ring-teal-500/40 focus:outline-none">Add Subnet</button>
-        </form>
-      </div>
-      <!-- Subnet List -->
-      <div id="subnetOverviewList" class="p-5 grid gap-3">
-        <div class="text-xs text-slate-500 dark:text-slate-400">Loading subnet data...</div>
-      </div>
-      <!-- Suggestions (collapsed behind toggle) -->
-      <div class="border-t border-slate-200 dark:border-slate-700 px-5 py-3">
-        <button type="button" id="toggleSuggestionsBtn" onclick="var sec = document.getElementById('subnetSuggestionsSection'); var isHidden = sec.classList.contains('hidden'); sec.classList.toggle('hidden'); this.innerHTML = isHidden ? '▼ Hide auto-detected subnets' : '▶ Auto-detect subnets from scanned data';" class="text-xs font-medium text-teal-600 hover:text-teal-700 dark:text-teal-400 dark:hover:text-teal-300">
-          ▶ Auto-detect subnets from scanned data
-        </button>
-        <div id="subnetSuggestionsSection" class="hidden mt-3">
-          <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-3">Suggestions</h3>
-          <div id="subnetSuggestionsList" class="grid gap-2"></div>
-        </div>
-      </div>
-    </section>
-
-    <!-- Audit Activity Section -->
-    <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-      <div class="flex items-center justify-between">
-        <div>
-          <h2 class="text-base font-semibold text-slate-900 dark:text-white">Audit Activity</h2>
-          <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Aktivitas terbaru dari dashboard dan API.</p>
-        </div>
-        <button type="button" id="toggleAuditBtn" onclick="var content = document.getElementById('auditContent'); var isHidden = content.classList.contains('hidden'); content.classList.toggle('hidden'); this.textContent = isHidden ? '▼ Hide audit activity' : '▶ Show audit activity (' + state.auditLogs.length + ')';" class="text-xs font-medium text-teal-600 hover:text-teal-700 dark:text-teal-400 dark:hover:text-teal-300">
-          ▶ Show audit activity
-        </button>
-      </div>
-      <div id="auditContent" class="hidden mt-4">
-        <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end mb-3">
-          <input id="auditSearchInput" type="search" placeholder="Cari action, actor, target..." class="rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-xs focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none sm:w-48 dark:border-slate-600 dark:bg-slate-700 dark:text-white" />
-          <select id="auditLimitSelect" class="rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-xs focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none dark:border-slate-600 dark:bg-slate-700 dark:text-white">
-            <option value="20">Last 20</option>
-            <option value="50">Last 50</option>
-            <option value="100" selected>Last 100</option>
-          </select>
-        </div>
-        <div id="auditLogList" class="grid gap-2"></div>
-      </div>
-    </section>
+    </main>
   </div>
 
   <script>
+    // ===== NEW UI UTILITY FUNCTIONS =====
+    let autoRefreshEnabled = true;
+    let autoRefreshTimer = null;
+
+    function setActiveView(view) {
+      const views = ['dashboard', 'routers', 'subnets', 'audit'];
+      const titles = { dashboard: 'Dashboard', routers: 'Routers', subnets: 'Subnets', audit: 'Audit' };
+      views.forEach(v => {
+        const el = document.getElementById('view-' + v);
+        const nav = document.querySelector('[data-view="' + v + '"]');
+        if (v === view) {
+          el.classList.add('active');
+          nav.classList.add('active', 'text-white', 'bg-slate-800');
+          nav.classList.remove('text-slate-300');
+        } else {
+          el.classList.remove('active');
+          nav.classList.remove('active', 'text-white', 'bg-slate-800');
+          nav.classList.add('text-slate-300');
+        }
+      });
+      document.getElementById('viewTitle').textContent = titles[view] || view;
+      // Auto-show audit content when navigating to audit view
+      if (view === 'audit') {
+        const auditContent = document.getElementById('auditContent');
+        if (auditContent.classList.contains('hidden')) {
+          auditContent.classList.remove('hidden');
+          document.getElementById('toggleAuditBtn').textContent = '▼ Hide audit activity';
+        }
+      }
+    }
+
+    function showSkeletons() {
+      document.getElementById('statCards').classList.add('hidden');
+      document.getElementById('statCardsSkeleton').classList.remove('hidden');
+      document.getElementById('tableSkeleton').classList.remove('hidden');
+      var subSkel = document.getElementById('subnetSkeleton');
+      if (subSkel) subSkel.classList.remove('hidden');
+    }
+
+    function hideSkeletons() {
+      document.getElementById('statCards').classList.remove('hidden');
+      document.getElementById('statCardsSkeleton').classList.add('hidden');
+      document.getElementById('tableSkeleton').classList.add('hidden');
+      var subSkel = document.getElementById('subnetSkeleton');
+      if (subSkel) subSkel.classList.add('hidden');
+    }
+
+    function startAutoRefresh() {
+      stopAutoRefresh();
+      autoRefreshTimer = setInterval(() => {
+        // Don't refresh if user is actively typing
+        const searchEl = document.getElementById('searchInput');
+        const auditSearchEl = document.getElementById('auditSearchInput');
+        if (document.activeElement === searchEl || document.activeElement === auditSearchEl) return;
+        // Don't refresh if user is editing in any input/textarea
+        const tag = document.activeElement ? document.activeElement.tagName.toLowerCase() : '';
+        if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+        if (state.bootstrapped) {
+          loadExplorer().catch(() => {});
+          renderStatCards();
+        }
+      }, 30000);
+    }
+
+    function stopAutoRefresh() {
+      if (autoRefreshTimer) {
+        clearInterval(autoRefreshTimer);
+        autoRefreshTimer = null;
+      }
+    }
+
+    function toggleAutoRefresh() {
+      autoRefreshEnabled = !autoRefreshEnabled;
+      const indicator = document.getElementById('autoRefreshIndicator');
+      const toggle = document.getElementById('toggleAutoRefresh');
+      if (autoRefreshEnabled) {
+        indicator.querySelector('span').textContent = 'Auto-refresh: ON';
+        indicator.querySelector('span').classList.remove('text-slate-400', 'dark:text-slate-500');
+        indicator.querySelector('span').classList.add('text-emerald-600', 'dark:text-emerald-400');
+        toggle.classList.remove('bg-slate-400');
+        toggle.classList.add('bg-emerald-500');
+        toggle.querySelector('span').classList.add('translate-x-4');
+        toggle.querySelector('span').classList.remove('translate-x-0');
+        startAutoRefresh();
+      } else {
+        indicator.querySelector('span').textContent = 'Auto-refresh: OFF';
+        indicator.querySelector('span').classList.add('text-slate-400', 'dark:text-slate-500');
+        indicator.querySelector('span').classList.remove('text-emerald-600', 'dark:text-emerald-400');
+        toggle.classList.add('bg-slate-400');
+        toggle.classList.remove('bg-emerald-500');
+        toggle.querySelector('span').classList.remove('translate-x-4');
+        toggle.querySelector('span').classList.add('translate-x-0');
+        stopAutoRefresh();
+      }
+    }
+
+    // ===== EXISTING STATE & ELEMENTS =====
     const state = {
       rows: [],
       filteredRows: [],
@@ -601,11 +824,15 @@
     }
 
     async function bootstrapApp() {
+      showSkeletons();
       await Promise.all([loadOlts(), loadExplorer(), loadAuditLogs(), loadMikrotikSettings(), loadSubnetOverview()]);
       renderStatCards();
       renderAlerts();
+      hideSkeletons();
       state.bootstrapped = true;
+      startAutoRefresh();
     }
+
     function setFlash(message, type = 'info') {
       showToast(message, type);
       const palette = {
@@ -687,29 +914,21 @@
     function renderAlerts() {
       const container = document.getElementById('alertBanner');
       const alerts = [];
-
-      // Check MikroTik credentials
       if (state.mikrotikSettingsSource === 'none') {
         alerts.push({ type: 'warning', message: '⚠️ Default MikroTik credentials belum dikonfigurasi. Set di panel Scan & Import Tools.' });
       }
-
-      // Check routers with error status
       const errorCount = state.rows.filter(r => r.connection_status === 'error').length;
       if (errorCount > 0) {
         alerts.push({ type: 'warning', message: `⚠️ Ada ${errorCount} router dengan status error. Periksa koneksi atau kredensial.` });
       }
-
-      // Check if no routers scanned
       if (state.rows.length === 0) {
         alerts.push({ type: 'info', message: 'ℹ️ Belum ada router yang di-scan. Mulai scan dari panel di atas.' });
       }
-
       if (alerts.length === 0) {
         container.classList.add('hidden');
         container.innerHTML = '';
         return;
       }
-
       container.classList.remove('hidden');
       container.innerHTML = alerts.map(alert => {
         if (alert.type === 'warning') {
@@ -718,9 +937,9 @@
         return `<div class="rounded-lg border-l-4 border-l-blue-500 bg-blue-50 px-4 py-2.5 text-xs font-medium text-blue-800 dark:bg-blue-900/20 dark:text-blue-300">${alert.message}</div>`;
       }).join('');
     }
+
     function renderAuditLogs(rows) {
       state.auditLogs = rows;
-      // Update the toggle button text with the count
       const toggleBtn = document.getElementById('toggleAuditBtn');
       if (toggleBtn && document.getElementById('auditContent').classList.contains('hidden')) {
         toggleBtn.textContent = '▶ Show audit activity (' + rows.length + ')';
@@ -741,7 +960,6 @@
       document.getElementById('statError').textContent = error;
       document.getElementById('statSubnets').textContent = subnetCount;
 
-      // Update last scan info
       const lastScanEl = document.getElementById('lastScanInfo');
       if (state.rows.length > 0) {
         const timestamps = state.rows
@@ -796,7 +1014,17 @@
 
     function renderTable(rows) {
       if (!rows.length) {
-        elements.tableBody.innerHTML = '<tr><td colspan="7" class="px-4 py-12 text-center text-xs text-slate-500 dark:text-slate-400">Belum ada data sesuai filter saat ini.</td></tr>';
+        // Empty state with SVG illustration
+        elements.tableBody.innerHTML = `<tr><td colspan="7" class="px-4 py-12 text-center">
+          <div class="flex flex-col items-center gap-3">
+            <svg class="w-16 h-16 text-slate-300 dark:text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <circle cx="12" cy="12" r="10" stroke-dasharray="4 4" stroke-width="1.5"/>
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2"/>
+            </svg>
+            <div class="text-sm font-medium text-slate-500 dark:text-slate-400">Belum ada router yang di-scan</div>
+            <button type="button" onclick="setActiveView('routers')" class="rounded-lg bg-teal-600 px-4 py-2 text-xs font-semibold text-white hover:bg-teal-700 transition-colors">Scan Router Pertama</button>
+          </div>
+        </td></tr>`;
         return;
       }
 
@@ -829,14 +1057,13 @@
         </tr>
       `).join('');
     }
+
     function renderOltOptions(row) {
-      // Get OLT IDs that are already auto-mapped to OTHER routers
       const mappedOltIds = new Set(
         state.rows
           .filter(r => r.olt_id && r.router_id !== row.router_id && r.mapped_by && r.mapped_by !== 'unmapped' && r.mapped_by !== 'manual')
           .map(r => String(r.olt_id))
       );
-
       const current = row.olt_name && row.olt_ip ? `${row.olt_name} (${row.olt_ip})` : 'Belum terhubung';
       const base = [`<option value="">Lepas mapping (${escapeHtml(current)})</option>`];
       const options = state.olts
@@ -902,6 +1129,7 @@
       if (!response.ok) throw new Error(data.error || 'Gagal mengambil default MikroTik access');
       renderMikrotikSettings(data);
     }
+
     async function loadSubnetOverview() {
       try {
         const [utilRes, suggestRes] = await Promise.all([
@@ -932,7 +1160,15 @@
     function renderSubnetOverview(subnets) {
       const container = document.getElementById('subnetOverviewList');
       if (!subnets.length) {
-        container.innerHTML = '<div class="rounded-lg border border-slate-200 bg-slate-50 px-4 py-4 text-xs text-slate-500 dark:border-slate-600 dark:bg-slate-700/50 dark:text-slate-400">Belum ada subnet yang didefinisikan. Tambahkan subnet menggunakan form di atas atau pilih dari suggestions.</div>';
+        // Empty state with SVG
+        container.innerHTML = `<div class="flex flex-col items-center gap-3 py-8">
+          <svg class="w-14 h-14 text-slate-300 dark:text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="10" stroke-dasharray="4 4" stroke-width="1.5"/>
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/>
+          </svg>
+          <div class="text-sm font-medium text-slate-500 dark:text-slate-400">Belum ada subnet</div>
+          <div class="text-xs text-slate-400 dark:text-slate-500">Tambahkan subnet menggunakan form di atas atau pilih dari suggestions.</div>
+        </div>`;
         return;
       }
       container.innerHTML = subnets.map((subnet) => {
@@ -997,7 +1233,6 @@
       const section = document.getElementById('subnetSuggestionsSection');
       const list = document.getElementById('subnetSuggestionsList');
       const toggleBtn = document.getElementById('toggleSuggestionsBtn');
-      // Show the toggle button area (parent) but keep suggestions hidden until user clicks
       toggleBtn.parentElement.classList.remove('hidden');
       const limited = suggestions.slice(0, 10);
       list.innerHTML = limited.map((s) => `
@@ -1273,6 +1508,7 @@
       `;
       elements.detailDrawer.classList.remove('translate-x-full');
     }
+
     function getMappingSourceLabel(source) {
       switch (source) {
         case 'auto_address': return 'auto_address (interface IP match)';
@@ -1333,6 +1569,7 @@
         elements.loginButton.classList.remove('btn-loading');
       }
     }
+
     async function handleMikrotikSettingsSave(event) {
       event.preventDefault();
       hideFlash();
@@ -1407,6 +1644,7 @@
         elements.scanButton.classList.remove('btn-loading');
       }
     }
+
     async function handleBulkScan(event) {
       event.preventDefault();
       hideFlash();
@@ -1446,7 +1684,6 @@
           await loadRouterDetail(routerId);
           return;
         }
-
         if (action === 'rescan') {
           button.disabled = true;
           button.textContent = 'Rescan...';
@@ -1457,7 +1694,6 @@
           await Promise.all([loadExplorer(), loadAuditLogs()]);
           return;
         }
-
         if (action === 'map') {
           const select = elements.tableBody.querySelector(`select[data-router-id="${routerId}"]`);
           const oltId = select ? (select.value || null) : null;
@@ -1481,6 +1717,7 @@
         button.disabled = false;
       }
     }
+
     async function handleLoadBulkFile() {
       const file = elements.bulkFile.files[0];
       if (!file) return setFlash('Pilih file .txt atau .csv terlebih dahulu.', 'error');
@@ -1560,6 +1797,7 @@
         })
         .catch((error) => setFlash(error.message, 'error'));
     }
+
     async function fetchAllFilteredRows() {
       const [sortBy, sortDir] = state.sort.split(':');
       const params = new URLSearchParams({
@@ -1599,6 +1837,7 @@
         .replaceAll("'", '&#39;');
     }
 
+    // ===== EVENT LISTENERS (all original) =====
     elements.loginForm.addEventListener('submit', handleLogin);
     document.getElementById('addSubnetForm').addEventListener('submit', handleAddSubnet);
     document.getElementById('welcomeGetStarted').addEventListener('click', hideWelcomeModal);
@@ -1657,17 +1896,51 @@
 
     // Quick action buttons
     document.getElementById('quickScanBtn').addEventListener('click', () => {
+      setActiveView('routers');
       const scanSection = document.getElementById('scanToolsContent');
       if (scanSection.classList.contains('collapsed')) {
         scanSection.classList.remove('collapsed');
         document.getElementById('toggleScanTools').querySelector('.chevron-icon').classList.add('rotate-180');
       }
-      document.getElementById('toggleScanTools').scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
     document.getElementById('quickSubnetsBtn').addEventListener('click', () => {
-      document.getElementById('subnetOverviewList').closest('section').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      setActiveView('subnets');
     });
 
+    // Auto-refresh toggle
+    document.getElementById('toggleAutoRefresh').addEventListener('click', toggleAutoRefresh);
+
+    // ===== KEYBOARD SHORTCUTS =====
+    document.addEventListener('keydown', (e) => {
+      // Ctrl+K or / to focus search
+      if ((e.ctrlKey && e.key === 'k') || (e.key === '/' && !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName))) {
+        e.preventDefault();
+        elements.searchInput.focus();
+        // Switch to dashboard view if not already there (where search lives)
+        if (!document.getElementById('view-dashboard').classList.contains('active')) {
+          setActiveView('dashboard');
+        }
+      }
+      // Escape to close drawer/modals
+      if (e.key === 'Escape') {
+        elements.detailDrawer.classList.add('translate-x-full');
+        // Close shortcuts tooltip
+        document.getElementById('shortcutsTooltip').classList.remove('show');
+      }
+    });
+
+    // Shortcuts button toggle
+    document.getElementById('shortcutsBtn').addEventListener('click', () => {
+      document.getElementById('shortcutsTooltip').classList.toggle('show');
+    });
+    // Close tooltip on outside click
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('#shortcutsBtn') && !e.target.closest('#shortcutsTooltip')) {
+        document.getElementById('shortcutsTooltip').classList.remove('show');
+      }
+    });
+
+    // ===== INIT =====
     checkHealth();
   </script>
 </body>
