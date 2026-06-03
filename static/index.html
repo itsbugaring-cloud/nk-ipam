@@ -145,6 +145,46 @@
       </div>
     </div>
 
+    <!-- Summary Stat Cards -->
+    <section id="statCards" class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+      <div class="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800 border-l-4 border-l-blue-500">
+        <div class="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-50 dark:bg-blue-900/30">
+          <svg class="w-5 h-5 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2"/></svg>
+        </div>
+        <div>
+          <div id="statTotalRouters" class="text-lg font-bold text-slate-900 dark:text-white">-</div>
+          <div class="text-[11px] text-slate-500 dark:text-slate-400">Total Routers</div>
+        </div>
+      </div>
+      <div class="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800 border-l-4 border-l-emerald-500">
+        <div class="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-50 dark:bg-emerald-900/30">
+          <svg class="w-5 h-5 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        </div>
+        <div>
+          <div id="statConnected" class="text-lg font-bold text-emerald-700 dark:text-emerald-400">-</div>
+          <div class="text-[11px] text-slate-500 dark:text-slate-400">Connected</div>
+        </div>
+      </div>
+      <div class="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800 border-l-4 border-l-red-500">
+        <div class="flex h-9 w-9 items-center justify-center rounded-lg bg-red-50 dark:bg-red-900/30">
+          <svg class="w-5 h-5 text-red-600 dark:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        </div>
+        <div>
+          <div id="statError" class="text-lg font-bold text-red-700 dark:text-red-400">-</div>
+          <div class="text-[11px] text-slate-500 dark:text-slate-400">Error</div>
+        </div>
+      </div>
+      <div class="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800 border-l-4 border-l-teal-500">
+        <div class="flex h-9 w-9 items-center justify-center rounded-lg bg-teal-50 dark:bg-teal-900/30">
+          <svg class="w-5 h-5 text-teal-600 dark:text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>
+        </div>
+        <div>
+          <div id="statSubnets" class="text-lg font-bold text-teal-700 dark:text-teal-400">-</div>
+          <div class="text-[11px] text-slate-500 dark:text-slate-400">Subnets Defined</div>
+        </div>
+      </div>
+    </section>
+
     <!-- Upload & Scan Section -->
     <section class="rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800 mb-6">
       <!-- Collapsible Header -->
@@ -270,10 +310,9 @@
         <div class="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div>
             <h2 class="text-base font-semibold text-slate-900 dark:text-white">Data Explorer</h2>
-            <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Filter, sort, dan pagination diproses di backend.</p>
           </div>
-          <div class="flex flex-col gap-2 lg:flex-row lg:flex-wrap lg:items-center">
-            <input id="searchInput" type="search" placeholder="Cari nama, IP WG, OLT..." class="rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-xs focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none lg:w-56 dark:border-slate-600 dark:bg-slate-700 dark:text-white" />
+          <div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+            <input id="searchInput" type="search" placeholder="Cari nama, IP WG, OLT..." class="rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-xs focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none sm:w-56 dark:border-slate-600 dark:bg-slate-700 dark:text-white" />
             <select id="statusFilter" class="rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-xs focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none dark:border-slate-600 dark:bg-slate-700 dark:text-white">
               <option value="all">Semua Status</option>
               <option value="connected">Connected</option>
@@ -371,12 +410,17 @@
 
     <!-- Audit Activity Section -->
     <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-      <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div class="flex items-center justify-between">
         <div>
           <h2 class="text-base font-semibold text-slate-900 dark:text-white">Audit Activity</h2>
           <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Aktivitas terbaru dari dashboard dan API.</p>
         </div>
-        <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <button type="button" id="toggleAuditBtn" onclick="var content = document.getElementById('auditContent'); var isHidden = content.classList.contains('hidden'); content.classList.toggle('hidden'); this.textContent = isHidden ? '▼ Hide audit activity' : '▶ Show audit activity (' + state.auditLogs.length + ')';" class="text-xs font-medium text-teal-600 hover:text-teal-700 dark:text-teal-400 dark:hover:text-teal-300">
+          ▶ Show audit activity
+        </button>
+      </div>
+      <div id="auditContent" class="hidden mt-4">
+        <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end mb-3">
           <input id="auditSearchInput" type="search" placeholder="Cari action, actor, target..." class="rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-xs focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none sm:w-48 dark:border-slate-600 dark:bg-slate-700 dark:text-white" />
           <select id="auditLimitSelect" class="rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-xs focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none dark:border-slate-600 dark:bg-slate-700 dark:text-white">
             <option value="20">Last 20</option>
@@ -384,8 +428,8 @@
             <option value="100" selected>Last 100</option>
           </select>
         </div>
+        <div id="auditLogList" class="grid gap-2"></div>
       </div>
-      <div id="auditLogList" class="mt-4 grid gap-2"></div>
     </section>
   </div>
 
@@ -506,6 +550,7 @@
 
     async function bootstrapApp() {
       await Promise.all([loadOlts(), loadExplorer(), loadAuditLogs(), loadMikrotikSettings(), loadSubnetOverview()]);
+      renderStatCards();
       state.bootstrapped = true;
     }
     function setFlash(message, type = 'info') {
@@ -553,7 +598,26 @@
     }
     function renderAuditLogs(rows) {
       state.auditLogs = rows;
+      // Update the toggle button text with the count
+      const toggleBtn = document.getElementById('toggleAuditBtn');
+      if (toggleBtn && document.getElementById('auditContent').classList.contains('hidden')) {
+        toggleBtn.textContent = '▶ Show audit activity (' + rows.length + ')';
+      }
       filterAndRenderAuditLogs();
+    }
+
+    function renderStatCards() {
+      const total = state.total || state.rows.length;
+      const connected = state.rows.filter(r => r.connection_status === 'connected').length;
+      const error = state.rows.filter(r => r.connection_status === 'error').length;
+      const subnetList = document.getElementById('subnetOverviewList');
+      const subnetItems = subnetList ? subnetList.querySelectorAll('[onclick*="toggleSubnetDetail"]') : [];
+      const subnetCount = subnetItems.length;
+
+      document.getElementById('statTotalRouters').textContent = total;
+      document.getElementById('statConnected').textContent = connected;
+      document.getElementById('statError').textContent = error;
+      document.getElementById('statSubnets').textContent = subnetCount;
     }
 
     function filterAndRenderAuditLogs() {
@@ -617,7 +681,7 @@
             ${row.last_error ? `<div class="mt-1 text-[10px] text-red-500 dark:text-red-400 truncate-cell" title="${escapeHtml(row.last_error)}">${escapeHtml(row.last_error)}</div>` : ''}
           </td>
           <td class="px-4 py-2.5">
-            <div class="flex items-center gap-1.5 flex-wrap">
+            <div class="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:flex-wrap">
               <button data-action="detail" data-router-id="${row.router_id}" class="rounded-md border border-slate-300 px-2 py-1 text-[10px] font-medium text-slate-700 hover:bg-slate-50 transition-colors dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700">Detail</button>
               <button data-action="rescan" data-router-id="${row.router_id}" class="rounded-md bg-slate-800 px-2 py-1 text-[10px] font-medium text-white hover:bg-slate-700 transition-colors dark:bg-slate-600 dark:hover:bg-slate-500">Rescan</button>
               <select data-action="mapping-select" data-router-id="${row.router_id}" class="rounded-md border border-slate-300 bg-white px-1.5 py-1 text-[10px] max-w-[100px] dark:border-slate-600 dark:bg-slate-700 dark:text-white">${renderOltOptions(row)}</select>
@@ -676,6 +740,7 @@
       state.total = Number(data.total || 0);
       renderTable(state.rows);
       updatePagination();
+      renderStatCards();
     }
 
     async function loadOlts() {
@@ -708,6 +773,7 @@
         const suggestData = await suggestRes.json();
         if (!utilRes.ok) throw new Error(utilData.error || 'Failed to load subnet utilization');
         renderSubnetOverview(utilData.subnets || []);
+        renderStatCards();
         if (suggestRes.ok && Array.isArray(suggestData) && suggestData.length > 0) {
           renderSubnetSuggestions(suggestData);
         } else {
