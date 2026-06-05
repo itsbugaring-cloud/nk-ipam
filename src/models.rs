@@ -160,6 +160,12 @@ pub struct OltOption {
     pub is_mapped: bool,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct CreateOltRequest {
+    pub name: String,
+    pub ip_address: String,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct RouterDetailResponse {
     pub router: ExplorerRow,

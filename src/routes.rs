@@ -20,7 +20,7 @@ use crate::{
     crypto,
     mikrotik::MikrotikClient,
     models::{
-        now_rfc3339, AuditLog, BookmarkOlt,
+        now_rfc3339, AuditLog, BookmarkOlt, CreateOltRequest,
         ExplorerResponse, ExplorerRow, HealthResponse, ImportBookmarksResponse, IpPoolRecord, LoginRequest,
         LoginResponse, MikrotikSettingsResponse, OltOption, RouterAddressRecord, RouterApiAddress,
         RouterApiPool, RouterApiRoute, RouterDetailResponse, RouterRecord, RouterRouteRecord,
@@ -72,7 +72,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/routers/:id/detail", get(get_router_detail))
         .route("/api/routers/:id/wireguard", get(get_router_wireguard))
         .route("/api/routers/export.csv", get(export_explorer_csv))
-        .route("/api/olts", get(list_olts))
+        .route("/api/olts", get(list_olts).post(create_olt))
         .route("/api/explorer", get(list_explorer))
         .route("/api/audit-logs", get(list_audit_logs))
         // Subnet routes: literal paths BEFORE parameterized paths
@@ -435,6 +435,45 @@ async fn list_olts(
     }
 
     Ok(Json(olts))
+}
+
+async fn create_olt(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<CreateOltRequest>,
+) -> AppResult<Json<OltOption>> {
+    let _actor = require_auth(&state, &headers)?;
+
+    let name = payload.name.trim();
+    let ip = payload.ip_address.trim();
+
+    if name.is_empty() || ip.is_empty() {
+        return Err(AppError::BadRequest("Name and IP address cannot be empty".to_string()));
+    }
+
+    let id = sqlx::query(
+        "INSERT INTO olts (name, ip_address, created_at, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) RETURNING id",
+    )
+    .bind(name)
+    .bind(ip)
+    .fetch_one(&state.pool)
+    .await?
+    .get("id");
+
+    crate::db::log_action(
+        &state.pool,
+        "api",
+        "create_olt",
+        &format!("Manually added OLT: {} ({})", name, ip),
+    )
+    .await;
+
+    Ok(Json(OltOption {
+        id,
+        name: name.to_string(),
+        ip_address: ip.to_string(),
+        is_mapped: false,
+    }))
 }
 
 async fn list_audit_logs(
