@@ -153,6 +153,7 @@ pub struct OltOption {
     pub id: i64,
     pub name: String,
     pub ip_address: String,
+    pub is_mapped: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]

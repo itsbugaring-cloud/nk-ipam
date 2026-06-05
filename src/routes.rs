@@ -11,7 +11,7 @@ use base64::Engine;
 use chrono::{DateTime, Utc};
 use hmac::{Hmac, Mac};
 use serde::Deserialize;
-use sqlx::SqlitePool;
+use sqlx::{SqlitePool, Row};
 use sha2::Sha256;
 
 use crate::{
@@ -413,19 +413,28 @@ async fn list_olts(
     headers: HeaderMap,
 ) -> AppResult<Json<Vec<OltOption>>> {
     let _actor = require_auth(&state, &headers)?;
-    let olts = sqlx::query_as::<_, crate::models::Olt>("SELECT * FROM olts ORDER BY name ASC")
-        .fetch_all(&state.pool)
-        .await?;
+    let rows = sqlx::query(
+        r#"
+        SELECT o.id, o.name, o.ip_address, (r.id IS NOT NULL) AS is_mapped
+        FROM olts o
+        LEFT JOIN routers r ON o.id = r.mapped_olt_id
+        ORDER BY o.name ASC
+        "#,
+    )
+    .fetch_all(&state.pool)
+    .await?;
 
-    Ok(Json(
-        olts.into_iter()
-            .map(|olt| OltOption {
-                id: olt.id,
-                name: olt.name,
-                ip_address: olt.ip_address,
-            })
-            .collect(),
-    ))
+    let mut olts = Vec::new();
+    for row in rows {
+        olts.push(OltOption {
+            id: row.get("id"),
+            name: row.get("name"),
+            ip_address: row.get("ip_address"),
+            is_mapped: row.get("is_mapped"),
+        });
+    }
+
+    Ok(Json(olts))
 }
 
 async fn list_audit_logs(

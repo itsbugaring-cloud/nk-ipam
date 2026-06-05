@@ -1028,15 +1028,10 @@
     }
 
     function renderOltOptions(row) {
-      const mappedOltIds = new Set(
-        state.rows
-          .filter(r => r.olt_id && r.router_id !== row.router_id && r.mapped_by && r.mapped_by !== 'unmapped' && r.mapped_by !== 'manual')
-          .map(r => String(r.olt_id))
-      );
       const current = row.olt_name && row.olt_ip ? `${row.olt_name} (${row.olt_ip})` : 'Belum terhubung';
       const base = [`<option value="">Lepas mapping (${escapeHtml(current)})</option>`];
       const options = state.olts
-        .filter(olt => !mappedOltIds.has(String(olt.id)) || String(olt.id) === String(row.olt_id || ''))
+        .filter(olt => !olt.is_mapped || String(olt.id) === String(row.olt_id || ''))
         .map((olt) => {
           const selected = String(olt.id) === String(row.olt_id || '') ? 'selected' : '';
           return `<option value="${escapeHtml(String(olt.id))}" ${selected}>${escapeHtml(olt.name)} (${escapeHtml(olt.ip_address)})</option>`;
