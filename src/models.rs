@@ -90,31 +90,10 @@ pub struct ScanRouterRequest {
     pub password: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-pub struct BulkScanRequest {
-    pub routers: Vec<ScanRouterRequest>,
-}
-
 #[derive(Debug, Clone, Serialize)]
 pub struct ScanRouterResponse {
     pub router: ExplorerRow,
     pub matched_by: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct BulkScanResponse {
-    pub success_count: usize,
-    pub failure_count: usize,
-    pub results: Vec<BulkScanItemResult>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct BulkScanItemResult {
-    pub wireguard_ip: String,
-    pub success: bool,
-    pub matched_by: Option<String>,
-    pub router: Option<ExplorerRow>,
-    pub error: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

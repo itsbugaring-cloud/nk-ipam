@@ -21,7 +21,7 @@ use crate::{
     crypto,
     mikrotik::MikrotikClient,
     models::{
-        now_rfc3339, AuditLog, BookmarkOlt, BulkScanItemResult, BulkScanRequest, BulkScanResponse,
+        now_rfc3339, AuditLog, BookmarkOlt,
         ExplorerResponse, ExplorerRow, HealthResponse, ImportBookmarksResponse, IpPoolRecord, LoginRequest,
         LoginResponse, MikrotikSettingsResponse, OltOption, RouterAddressRecord, RouterApiAddress,
         RouterApiPool, RouterApiRoute, RouterDetailResponse, RouterRecord, RouterRouteRecord,
@@ -67,7 +67,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/settings/mikrotik", get(get_mikrotik_settings).post(update_mikrotik_settings))
         .route("/api/bookmarks/import", post(import_bookmarks))
         .route("/api/routers/scan", post(scan_router))
-        .route("/api/routers/bulk-scan", post(bulk_scan_routers))
+
         .route("/api/routers/:id/rescan", post(rescan_router))
         .route("/api/routers/:id/map-olt", post(update_router_mapping))
         .route("/api/routers/:id/detail", get(get_router_detail))
@@ -233,57 +233,6 @@ async fn scan_router(
     Ok(Json(result))
 }
 
-async fn bulk_scan_routers(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Json(payload): Json<BulkScanRequest>,
-) -> AppResult<Json<BulkScanResponse>> {
-    let actor = require_auth(&state, &headers)?;
-
-    if payload.routers.is_empty() {
-        return Err(AppError::BadRequest(
-            "routers collection must contain at least one item".to_string(),
-        ));
-    }
-
-    let concurrency = state.config.max_scan_concurrency.max(1);
-    let results = stream::iter(payload.routers.into_iter().map(|router| {
-        let state = state.clone();
-        async move {
-            let wireguard_ip = router.wireguard_ip.clone();
-            match scan_router_payload(&state, router, false).await {
-                Ok(response) => BulkScanItemResult {
-                    wireguard_ip,
-                    success: true,
-                    matched_by: response.matched_by,
-                    router: Some(response.router),
-                    error: None,
-                },
-                Err(err) => BulkScanItemResult {
-                    wireguard_ip,
-                    success: false,
-                    matched_by: None,
-                    router: None,
-                    error: Some(err.to_string()),
-                },
-            }
-        }
-    }))
-    .buffer_unordered(concurrency)
-    .collect::<Vec<_>>()
-    .await;
-
-    let success_count = results.iter().filter(|item| item.success).count();
-    let failure_count = results.len().saturating_sub(success_count);
-    let detail = format!("success={success_count};failure={failure_count}");
-    append_audit_log(&state.pool, &actor, "bulk_scan", "router", None, Some(&detail)).await?;
-
-    Ok(Json(BulkScanResponse {
-        success_count,
-        failure_count,
-        results,
-    }))
-}
 
 async fn rescan_router(
     State(state): State<AppState>,
