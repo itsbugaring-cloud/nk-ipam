@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use sqlx::SqlitePool;
+use sqlx::Row;
 use tokio::net::TcpStream;
 use tokio::time;
 
@@ -31,7 +31,7 @@ async fn ping_worker_loop(state: AppState) {
     loop {
         interval.tick().await;
         
-        let routers = match sqlx::query!("SELECT id, wireguard_ip FROM routers").fetch_all(&state.pool).await {
+        let routers = match sqlx::query("SELECT id, wireguard_ip FROM routers").fetch_all(&state.pool).await {
             Ok(rows) => rows,
             Err(e) => {
                 tracing::error!("Failed to fetch routers for ping: {}", e);
@@ -39,19 +39,23 @@ async fn ping_worker_loop(state: AppState) {
             }
         };
 
-        for router in routers {
-            let is_online = check_tcp_port(&router.wireguard_ip, 80).await;
+        for row in routers {
+            let id: i64 = row.get("id");
+            let wireguard_ip: String = row.get("wireguard_ip");
+            let is_online = check_tcp_port(&wireguard_ip, 80).await;
             
             let now = chrono::Utc::now().to_rfc3339();
-            let res = sqlx::query!(
-                "UPDATE routers SET is_online = ?, last_ping_at = ? WHERE id = ?",
-                is_online, now, router.id
+            let res = sqlx::query(
+                "UPDATE routers SET is_online = ?, last_ping_at = ? WHERE id = ?"
             )
+            .bind(is_online)
+            .bind(now)
+            .bind(id)
             .execute(&state.pool)
             .await;
 
             if let Err(e) = res {
-                tracing::error!("Failed to update ping status for router {}: {}", router.id, e);
+                tracing::error!("Failed to update ping status for router {}: {}", id, e);
             }
         }
     }
@@ -76,7 +80,8 @@ async fn cleanup_worker_loop(state: AppState) {
         let thirty_days_ago = chrono::Utc::now() - chrono::Duration::days(30);
         let timestamp = thirty_days_ago.to_rfc3339();
 
-        let res = sqlx::query!("DELETE FROM audit_logs WHERE created_at < ?", timestamp)
+        let res = sqlx::query("DELETE FROM audit_logs WHERE created_at < ?")
+            .bind(timestamp)
             .execute(&state.pool)
             .await;
 
@@ -100,7 +105,7 @@ async fn sync_worker_loop(state: AppState) {
         tracing::debug!("Running auto-sync worker...");
         
         // Fetch routers that are mapped and online
-        let routers = match sqlx::query!(
+        let routers = match sqlx::query(
             "SELECT id, wireguard_ip, auth_username, auth_password FROM routers WHERE mapped_olt_id IS NOT NULL AND is_online = true"
         )
         .fetch_all(&state.pool)
@@ -113,41 +118,49 @@ async fn sync_worker_loop(state: AppState) {
             }
         };
 
-        for router in routers {
-            let username = router.auth_username.unwrap_or_else(|| "admin".to_string());
-            let password = router.auth_password
+        for row in routers {
+            let id: i64 = row.get("id");
+            let wireguard_ip: String = row.get("wireguard_ip");
+            let auth_username: Option<String> = row.get("auth_username");
+            let auth_password: Option<String> = row.get("auth_password");
+
+            let username = auth_username.unwrap_or_else(|| "admin".to_string());
+            let password = auth_password
                 .and_then(|enc| crypto::decrypt(&state.config.crypto_key, &enc).ok())
                 .unwrap_or_default();
 
             // Fetch addresses
-            if let Ok(addresses) = state.mikrotik.fetch_addresses(&router.wireguard_ip, &username, &password).await {
-                let _ = crate::routes::replace_router_addresses(&state.pool, router.id, &addresses).await;
+            if let Ok(addresses) = state.mikrotik.fetch_addresses(&wireguard_ip, &username, &password).await {
+                let _ = crate::routes::replace_router_addresses(&state.pool, id, &addresses).await;
             }
 
             // Fetch pools
-            if let Ok(pools) = state.mikrotik.fetch_pools(&router.wireguard_ip, &username, &password).await {
-                let _ = crate::routes::replace_ip_pools(&state.pool, router.id, &pools).await;
+            if let Ok(pools) = state.mikrotik.fetch_pools(&wireguard_ip, &username, &password).await {
+                let _ = crate::routes::replace_ip_pools(&state.pool, id, &pools).await;
             }
 
             // Fetch routes
-            if let Ok(routes) = state.mikrotik.fetch_routes(&router.wireguard_ip, &username, &password).await {
-                let _ = crate::routes::replace_router_routes(&state.pool, router.id, &routes).await;
+            if let Ok(routes) = state.mikrotik.fetch_routes(&wireguard_ip, &username, &password).await {
+                let _ = crate::routes::replace_router_routes(&state.pool, id, &routes).await;
             }
 
             // Fetch wireguard
-            if let Ok(wg_ifaces) = state.mikrotik.fetch_wireguard_interfaces(&router.wireguard_ip, &username, &password).await {
-                let _ = crate::routes::replace_wireguard_interfaces(&state.pool, router.id, &wg_ifaces).await;
+            if let Ok(wg_ifaces) = state.mikrotik.fetch_wireguard_interfaces(&wireguard_ip, &username, &password).await {
+                let _ = crate::routes::replace_wireguard_interfaces(&state.pool, id, &wg_ifaces).await;
             }
-            if let Ok(wg_peers) = state.mikrotik.fetch_wireguard_peers(&router.wireguard_ip, &username, &password).await {
-                let _ = crate::routes::replace_wireguard_peers(&state.pool, router.id, &wg_peers).await;
+            if let Ok(wg_peers) = state.mikrotik.fetch_wireguard_peers(&wireguard_ip, &username, &password).await {
+                let _ = crate::routes::replace_wireguard_peers(&state.pool, id, &wg_peers).await;
             }
 
             // Update last_scanned_at
             let now = chrono::Utc::now().to_rfc3339();
-            let _ = sqlx::query!(
-                "UPDATE routers SET last_scanned_at = ?, updated_at = ? WHERE id = ?",
-                now, now, router.id
-            ).execute(&state.pool).await;
+            let _ = sqlx::query(
+                "UPDATE routers SET last_scanned_at = ?, updated_at = ? WHERE id = ?"
+            )
+            .bind(&now)
+            .bind(&now)
+            .bind(id)
+            .execute(&state.pool).await;
         }
     }
 }
