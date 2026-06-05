@@ -460,12 +460,16 @@ async fn create_olt(
     .await?
     .get("id");
 
-    crate::db::log_action(
-        &state.pool,
-        "api",
-        "create_olt",
-        &format!("Manually added OLT: {} ({})", name, ip),
+    let _ = sqlx::query(
+        "INSERT INTO audit_logs (actor, action, target_type, target_id, detail, created_at) VALUES (?, ?, ?, ?, ?, ?)",
     )
+    .bind("api")
+    .bind("create_olt")
+    .bind("olt")
+    .bind(id)
+    .bind(&format!("Manually added OLT: {} ({})", name, ip))
+    .bind(chrono::Utc::now().to_rfc3339())
+    .execute(&state.pool)
     .await;
 
     Ok(Json(OltOption {
