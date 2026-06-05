@@ -1,35 +1,28 @@
 services:
   netking-ipam:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    build: .
     container_name: netking-ipam
-    ports:
-      - "${APP_PORT:-8080}:${APP_PORT:-8080}"
-    environment:
-      APP_HOST: ${APP_HOST:-0.0.0.0}
-      APP_PORT: ${APP_PORT:-8080}
-      DATABASE_URL: ${DATABASE_URL:-sqlite:///app/data/netking.db}
-      APP_ADMIN_USERNAME: ${APP_ADMIN_USERNAME}
-      APP_ADMIN_PASSWORD: ${APP_ADMIN_PASSWORD}
-      APP_SESSION_TOKEN: ${APP_SESSION_TOKEN}
-      APP_CRYPTO_KEY: ${APP_CRYPTO_KEY}
-      MIKROTIK_USERNAME: ${MIKROTIK_USERNAME:-}
-      MIKROTIK_PASSWORD: ${MIKROTIK_PASSWORD:-}
-      MIKROTIK_ALLOW_INSECURE_TLS: ${MIKROTIK_ALLOW_INSECURE_TLS:-true}
-      MIKROTIK_USE_HTTPS: ${MIKROTIK_USE_HTTPS:-false}
-      MIKROTIK_REQUEST_TIMEOUT_SECS: ${MIKROTIK_REQUEST_TIMEOUT_SECS:-20}
-      MAX_SCAN_CONCURRENCY: ${MAX_SCAN_CONCURRENCY:-8}
-      SCAN_COOLDOWN_SECS: ${SCAN_COOLDOWN_SECS:-20}
-    volumes:
-      - netking-ipam-data:/app/data
-    healthcheck:
-      test: ["CMD", "curl", "--fail", "http://127.0.0.1:8080/api/health"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 20s
     restart: unless-stopped
-
-volumes:
-  netking-ipam-data:
+    ports:
+      - "80:8080"
+    volumes:
+      - ./app/data:/app/database/data
+      - ./app/logs:/app/storage/logs
+    environment:
+      - APP_NAME=NetkingIPAM
+      - APP_ENV=production
+      - APP_KEY=base64:7Bv+nJ85+GZz0jVvK1bFvA9l5YQ0u1H7M3oZzJzWcKk=
+      - APP_DEBUG=false
+      - APP_URL=http://localhost
+      - LOG_CHANNEL=single
+      - DB_CONNECTION=sqlite
+      - DATABASE_URL=sqlite:////app/database/data/database.sqlite
+      - DB_FOREIGN_KEYS=true
+      - CACHE_STORE=file
+      - QUEUE_CONNECTION=database
+      - SESSION_DRIVER=file
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/up"]
+      interval: 30s
+      timeout: 10s
+      retries: 3

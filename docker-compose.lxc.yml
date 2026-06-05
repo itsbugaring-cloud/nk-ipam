@@ -1,4 +1,22 @@
 services:
   netking-ipam:
+    build: .
+    container_name: netking-ipam
+    restart: unless-stopped
     network_mode: host
-    ports: []
+    volumes:
+      - ./app/data:/app/database/data
+      - ./app/logs:/app/storage/logs
+    environment:
+      - APP_NAME=NetkingIPAM
+      - APP_ENV=production
+      - APP_KEY=base64:7Bv+nJ85+GZz0jVvK1bFvA9l5YQ0u1H7M3oZzJzWcKk=
+      - APP_DEBUG=false
+      - APP_URL=http://localhost
+      - LOG_CHANNEL=single
+      - DB_CONNECTION=sqlite
+      - DATABASE_URL=sqlite:////app/database/data/database.sqlite
+      - DB_FOREIGN_KEYS=true
+      - CACHE_STORE=file
+      - QUEUE_CONNECTION=database
+      - SESSION_DRIVER=file
