@@ -94,6 +94,7 @@ pub struct ScanRouterRequest {
 pub struct ScanRouterResponse {
     pub router: ExplorerRow,
     pub matched_by: Option<String>,
+    pub already_existed: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

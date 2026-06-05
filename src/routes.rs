@@ -460,7 +460,7 @@ async fn scan_router_payload(
     let credentials = resolve_credentials(state, &payload).await?;
     let auth_source = credentials.source.as_str();
 
-    let router_id = upsert_router(
+    let (router_id, already_existed) = upsert_router(
         &state.pool,
         &state.config,
         &device_name,
@@ -568,6 +568,7 @@ async fn scan_router_payload(
     Ok(ScanRouterResponse {
         router: explorer_row,
         matched_by,
+        already_existed,
     })
 }
 
@@ -807,12 +808,30 @@ async fn upsert_router(
     auth_username: Option<&str>,
     auth_password: Option<&str>,
     auth_source: &str,
-) -> AppResult<i64> {
+) -> AppResult<(i64, bool)> {
     let scheme = if config.mikrotik_use_https { "https" } else { "http" };
     let api_base_url = format!("{scheme}://{wireguard_ip}/rest");
     let encrypted_password = auth_password
         .map(|password| crypto::encrypt(&config.crypto_key, password))
         .transpose()?;
+
+    // Check if this IP already exists — preserve its name if it does
+    let existing: Option<(i64, String)> =
+        sqlx::query_as("SELECT id, name FROM routers WHERE wireguard_ip = ?")
+            .bind(wireguard_ip)
+            .fetch_optional(pool)
+            .await?;
+
+    let already_existed = existing.is_some();
+    // Keep the existing name unless it's still the auto-generated default
+    let final_name = match &existing {
+        Some((_, saved_name))
+            if saved_name != &format!("Router-{wireguard_ip}") =>
+        {
+            saved_name.clone()
+        }
+        _ => device_name.to_string(),
+    };
 
     sqlx::query(
         r#"
@@ -830,7 +849,7 @@ async fn upsert_router(
             updated_at = excluded.updated_at
         "#,
     )
-    .bind(device_name)
+    .bind(final_name)
     .bind(wireguard_ip)
     .bind(api_base_url)
     .bind(auth_username)
@@ -844,7 +863,7 @@ async fn upsert_router(
         .bind(wireguard_ip)
         .fetch_one(pool)
         .await?;
-    Ok(row.0)
+    Ok((row.0, already_existed))
 }
 
 async fn replace_router_addresses(

@@ -1603,7 +1603,14 @@
         });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || 'Scan router gagal');
-        setFlash(`Router ${data.router.device_name} berhasil disinkronkan.`, 'success');
+        if (data.already_existed) {
+          setFlash(
+            `⚠️ IP ${wireguardIp} sudah ada di database — data diperbarui (rescan). Nama router dipertahankan: "${data.router.device_name}".`,
+            'info'
+          );
+        } else {
+          setFlash(`✅ Router baru "${data.router.device_name}" berhasil ditambahkan dan disinkronkan.`, 'success');
+        }
         elements.scanForm.reset();
         state.currentPage = 1;
         await Promise.all([loadExplorer(), loadAuditLogs()]);
