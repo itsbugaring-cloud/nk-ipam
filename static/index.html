@@ -1000,8 +1000,14 @@
       elements.tableBody.innerHTML = rows.map((row) => `
         <tr class="align-top hover:bg-slate-50/80 dark:hover:bg-slate-700/30 transition-colors">
           <td class="px-4 py-2.5">
-            <div class="text-sm font-medium text-slate-900 dark:text-white truncate-cell" title="${escapeHtml(row.device_name)}">${escapeHtml(row.device_name)}</div>
-            <div class="mt-0.5 text-[11px] text-slate-400 dark:text-slate-500">${escapeHtml(row.last_scanned_at || '-')}</div>
+            <div class="flex items-center gap-1.5 text-sm font-medium text-slate-900 dark:text-white truncate-cell" title="${escapeHtml(row.device_name)}">
+              <span class="relative flex h-2 w-2" title="${row.is_online ? 'Online' : 'Offline'}">
+                ${row.is_online ? '<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span><span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>' : '<span class="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>'}
+              </span>
+              ${escapeHtml(row.device_name)}
+            </div>
+            <div class="mt-1 text-[10px] text-slate-400 dark:text-slate-500" title="Terakhir scan konfigurasi MikroTik">Scan: ${escapeHtml(row.last_scanned_at || '-')}</div>
+            <div class="text-[10px] text-slate-400 dark:text-slate-500" title="Terakhir cek koneksi port 80">Ping: ${escapeHtml(row.last_ping_at || '-')}</div>
           </td>
           <td class="px-4 py-2.5 font-mono text-xs text-slate-700 dark:text-slate-300">${escapeHtml(row.wireguard_ip)}</td>
           <td class="px-4 py-2.5"><span class="inline-flex rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600 dark:bg-slate-700 dark:text-slate-300">${escapeHtml(row.auth_source || 'env')}</span></td>

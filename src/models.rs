@@ -26,6 +26,8 @@ pub struct RouterRecord {
     pub mapping_source: Option<String>,
     pub last_error: Option<String>,
     pub last_scanned_at: Option<String>,
+    pub is_online: Option<bool>,
+    pub last_ping_at: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -72,6 +74,8 @@ pub struct ExplorerRow {
     pub connection_status: String,
     pub last_scanned_at: Option<String>,
     pub last_error: Option<String>,
+    pub is_online: Option<bool>,
+    pub last_ping_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

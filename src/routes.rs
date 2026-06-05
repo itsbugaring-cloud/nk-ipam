@@ -712,6 +712,8 @@ async fn fetch_explorer_rows(pool: &SqlitePool, query: &ExplorerQuery) -> AppRes
             connection_status: row.connection_status,
             last_scanned_at: row.last_scanned_at,
             last_error: row.last_error,
+            is_online: row.is_online,
+            last_ping_at: row.last_ping_at,
         });
     }
 
@@ -875,7 +877,7 @@ async fn upsert_router(
     Ok((row.0, already_existed))
 }
 
-async fn replace_router_addresses(
+pub(crate) async fn replace_router_addresses(
     pool: &SqlitePool,
     router_id: i64,
     addresses: &[RouterApiAddress],
@@ -905,7 +907,7 @@ async fn replace_router_addresses(
     Ok(())
 }
 
-async fn replace_ip_pools(pool: &SqlitePool, router_id: i64, pools: &[RouterApiPool]) -> AppResult<()> {
+pub(crate) async fn replace_ip_pools(pool: &SqlitePool, router_id: i64, pools: &[RouterApiPool]) -> AppResult<()> {
     sqlx::query("DELETE FROM ip_pools WHERE router_id = ?")
         .bind(router_id)
         .execute(pool)
@@ -938,7 +940,7 @@ async fn replace_ip_pools(pool: &SqlitePool, router_id: i64, pools: &[RouterApiP
     Ok(())
 }
 
-async fn replace_router_routes(
+pub(crate) async fn replace_router_routes(
     pool: &SqlitePool,
     router_id: i64,
     routes: &[RouterApiRoute],
@@ -1066,6 +1068,8 @@ async fn fetch_explorer_row(pool: &SqlitePool, router_id: i64) -> AppResult<Expl
         connection_status: router.connection_status,
         last_scanned_at: router.last_scanned_at,
         last_error: router.last_error,
+        is_online: router.is_online,
+        last_ping_at: router.last_ping_at,
     })
 }
 
@@ -1195,7 +1199,7 @@ fn csv_escape(input: &str) -> String {
 
 // --- WireGuard replace functions ---
 
-async fn replace_wireguard_interfaces(
+pub(crate) async fn replace_wireguard_interfaces(
     pool: &SqlitePool,
     router_id: i64,
     interfaces: &[WireguardApiInterface],
@@ -1230,7 +1234,7 @@ async fn replace_wireguard_interfaces(
     Ok(())
 }
 
-async fn replace_wireguard_peers(
+pub(crate) async fn replace_wireguard_peers(
     pool: &SqlitePool,
     router_id: i64,
     peers: &[WireguardApiPeer],

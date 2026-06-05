@@ -8,6 +8,7 @@ mod net;
 mod parser;
 mod routes;
 mod utilization;
+mod worker;
 
 use std::path::Path;
 
@@ -28,11 +29,16 @@ async fn main() -> AppResult<()> {
     let pool = db::init_pool(&config.database_url).await?;
     let mikrotik = MikrotikClient::new(&config)?;
 
-    let api_router = routes::build_router(AppState {
+    let app_state = AppState {
         pool,
         mikrotik,
         config: config.clone(),
-    });
+    };
+
+    // Start background workers
+    worker::start_workers(app_state.clone());
+
+    let api_router = routes::build_router(app_state);
     let app = Router::new()
         .merge(api_router)
         .nest_service("/", ServeDir::new("static").append_index_html_on_directories(true))
