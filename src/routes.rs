@@ -4,12 +4,11 @@ use axum::{
     extract::{Multipart, Path, Query, State},
     http::{header, HeaderMap, HeaderValue, StatusCode},
     response::IntoResponse,
-    routing::{delete, get, post, put},
+    routing::{get, post, put},
     Json, Router,
 };
 use base64::Engine;
 use chrono::{DateTime, Utc};
-use futures_util::{stream, StreamExt};
 use hmac::{Hmac, Mac};
 use serde::Deserialize;
 use sqlx::SqlitePool;

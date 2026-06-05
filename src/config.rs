@@ -15,7 +15,6 @@ pub struct AppConfig {
     pub mikrotik_password: Option<String>,
     pub allow_insecure_tls: bool,
     pub request_timeout_secs: u64,
-    pub max_scan_concurrency: usize,
     pub scan_cooldown_secs: u64,
     pub session_ttl_secs: u64,
     pub mikrotik_use_https: bool,
@@ -60,12 +59,6 @@ impl AppConfig {
                 .parse::<u64>()
                 .map_err(|err| {
                     AppError::BadRequest(format!("MIKROTIK_REQUEST_TIMEOUT_SECS invalid: {err}"))
-                })?,
-            max_scan_concurrency: env::var("MAX_SCAN_CONCURRENCY")
-                .unwrap_or_else(|_| "8".to_string())
-                .parse::<usize>()
-                .map_err(|err| {
-                    AppError::BadRequest(format!("MAX_SCAN_CONCURRENCY invalid: {err}"))
                 })?,
             scan_cooldown_secs: env::var("SCAN_COOLDOWN_SECS")
                 .unwrap_or_else(|_| "20".to_string())
