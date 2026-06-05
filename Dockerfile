@@ -25,6 +25,7 @@ COPY . .
 RUN chmod -R 775 storage bootstrap/cache
 
 # Install PHP dependencies
+RUN composer config policy.advisories.block false || true
 RUN composer install --no-interaction --optimize-autoloader --no-dev
 
 # Setup environment
